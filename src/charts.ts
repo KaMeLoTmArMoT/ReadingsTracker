@@ -146,7 +146,7 @@ export const supplierLineTransitionsPlugin: Plugin<"line"> = {
 
     const validBadges: TransitionBadge[] = [];
 
-    for (let pIdx = 1; pIdx < periods.length; pIdx++) {
+    for (let pIdx = 0; pIdx < periods.length; pIdx++) {
       const p = periods[pIdx];
       if (!p.startDate) continue;
 
@@ -235,6 +235,9 @@ export const supplierLineTransitionsPlugin: Plugin<"line"> = {
       const { xPix, period: p, yearStr, isFocused, curveY, badgeY } = b;
       const alphaHex = isFocused ? "FF" : "33";
 
+      const pIndexInSummaries = periods.indexOf(p);
+      const isInitial = pIndexInSummaries === 0;
+
       // 1. Vertical dashed line
       ctx.beginPath();
       ctx.setLineDash([4, 4]);
@@ -259,7 +262,8 @@ export const supplierLineTransitionsPlugin: Plugin<"line"> = {
       }
 
       // 3. Curve-aligned Pill Badge
-      const labelText = `🔄 '${yearStr.slice(2)} ${p.supplier}`;
+      const icon = isInitial ? "🏁" : "🔄";
+      const labelText = `${icon} '${yearStr.slice(2)} ${p.supplier}`;
       ctx.font = "600 10px Inter, sans-serif";
       const textMetrics = ctx.measureText(labelText);
       const paddingX = 6;
@@ -318,7 +322,7 @@ export const supplierBarTransitionsPlugin: Plugin<"bar"> = {
   ) {
     const periods = options?.periods;
     const year = options?.year;
-    if (!periods || !year || periods.length <= 1) return;
+    if (!periods || !year || periods.length === 0) return;
 
     const { ctx, chartArea, scales } = chart;
     const xScale = scales.x;
@@ -328,7 +332,7 @@ export const supplierBarTransitionsPlugin: Plugin<"bar"> = {
     const highlighted = options.highlightedSupplier;
 
     ctx.save();
-    for (let pIdx = 1; pIdx < periods.length; pIdx++) {
+    for (let pIdx = 0; pIdx < periods.length; pIdx++) {
       const p = periods[pIdx];
       if (!p.startDate || !p.startDate.startsWith(year)) continue;
 
@@ -344,6 +348,8 @@ export const supplierBarTransitionsPlugin: Plugin<"bar"> = {
       const x = el.x;
       const y = el.y;
 
+      const icon = pIdx === 0 ? "🏁" : "🔄";
+
       ctx.beginPath();
       ctx.setLineDash([3, 3]);
       ctx.strokeStyle = `${p.color}${alpha}`;
@@ -356,7 +362,7 @@ export const supplierBarTransitionsPlugin: Plugin<"bar"> = {
       ctx.font = "600 9px Inter, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
-      ctx.fillText(`🔄 ${p.supplier}`, x, y - 6);
+      ctx.fillText(`${icon} ${p.supplier}`, x, y - 6);
     }
     ctx.restore();
   },

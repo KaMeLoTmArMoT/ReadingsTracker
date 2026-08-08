@@ -255,6 +255,8 @@ export function renderStatsChips(i: number): string {
 export function renderDatasets(shouldPersist = true): void {
   const host = document.getElementById("datasets");
   if (!host) return;
+
+  const currentScrollY = window.scrollY;
   host.innerHTML = "";
 
   for (const [i, ds] of datasets.entries()) {
@@ -292,13 +294,24 @@ export function renderDatasets(shouldPersist = true): void {
       const eff = effectiveEntries[j];
       const prevEff = j > 0 ? effectiveEntries[j - 1] : null;
 
+      const isInitial = j === 0 && eff && eff.effectiveSupplier;
       const isTransition =
         j > 0 &&
         prevEff &&
         eff &&
         eff.effectiveSupplier !== prevEff.effectiveSupplier;
 
-      if (isTransition) {
+      if (isInitial) {
+        tableRowsHTML += `
+          <tr class="supplier-transition-row">
+            <td colspan="5">
+              <div class="supplier-transition-badge">
+                🏁 Initial Supplier: <strong>${eff.effectiveSupplier}</strong>
+              </div>
+            </td>
+          </tr>
+        `;
+      } else if (isTransition) {
         tableRowsHTML += `
           <tr class="supplier-transition-row">
             <td colspan="5">
@@ -513,6 +526,10 @@ export function renderDatasets(shouldPersist = true): void {
 
     drawChart(i);
   }
+
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: currentScrollY, behavior: "instant" });
+  });
 
   if (shouldPersist) {
     persistState();
