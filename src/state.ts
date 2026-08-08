@@ -8,11 +8,14 @@ import type { CategoryDataset, ReadingEntry } from "./types";
 const DEFAULT_SUPABASE_URL = "https://gxbpsbqpuaudtlfliezs.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY =
   "sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z";
-const LOCAL_STORAGE_KEY = "readings_tracker_datasets";
+const LOCAL_STORAGE_GUEST_KEY = "readings_tracker_guest_datasets";
+const LOCAL_STORAGE_LEGACY_KEY = "readings_tracker_datasets";
 
 export let datasets: CategoryDataset[] = [];
 export let supabaseClient: SupabaseClient | null = null;
 export let currentUser: User | null = null;
+export type SyncState = "offline" | "synced" | "syncing" | "error";
+export let syncState: SyncState = "offline";
 
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let renderCallback: ((shouldPersist?: boolean) => void) | null = null;
@@ -54,11 +57,12 @@ function setupAuthListeners(): void {
 
   supabaseClient.auth.onAuthStateChange(async (_event, session) => {
     currentUser = session?.user || null;
-    authUpdateCallback?.();
 
     if (currentUser) {
       await loadFromSupabase();
     } else {
+      syncState = "offline";
+      authUpdateCallback?.();
       loadFromLocalStorage();
     }
   });
@@ -84,6 +88,10 @@ export async function handleSignOut(): Promise<void> {
   if (supabaseClient) {
     await supabaseClient.auth.signOut();
   }
+  currentUser = null;
+  syncState = "offline";
+  loadFromLocalStorage();
+  authUpdateCallback?.();
 }
 
 export function promptSupabaseConfig(): void {
@@ -104,10 +112,16 @@ export function persistState(): void {
       entries: d.entries,
       collapsed: d.collapsed,
     }));
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(serializable));
 
-    if (supabaseClient && currentUser) {
-      syncToSupabase(serializable);
+    if (currentUser) {
+      if (supabaseClient) {
+        syncToSupabase(serializable);
+      }
+    } else {
+      localStorage.setItem(
+        LOCAL_STORAGE_GUEST_KEY,
+        JSON.stringify(serializable),
+      );
     }
   }, 300);
 }
@@ -115,6 +129,9 @@ export function persistState(): void {
 async function syncToSupabase(serializableData: unknown[]): Promise<void> {
   if (!supabaseClient || !currentUser) return;
   try {
+    syncState = "syncing";
+    authUpdateCallback?.();
+
     const { error } = await supabaseClient.from("user_readings").upsert(
       {
         user_id: currentUser.id,
@@ -125,15 +142,42 @@ async function syncToSupabase(serializableData: unknown[]): Promise<void> {
       { onConflict: "user_id, data_key" },
     );
 
-    if (error) console.error("Cloud sync error:", error.message);
+    if (error) {
+      console.error("Cloud sync error:", error.message);
+      syncState = "error";
+    } else {
+      syncState = "synced";
+    }
+    authUpdateCallback?.();
   } catch (e) {
     console.error("Cloud sync exception:", e);
+    syncState = "error";
+    authUpdateCallback?.();
   }
 }
 
+function clearCharts(): void {
+  for (const ds of datasets) {
+    ds.chart?.destroy();
+    if (ds.barCharts) {
+      for (const key of Object.keys(ds.barCharts)) {
+        ds.barCharts[key]?.destroy();
+      }
+    }
+  }
+  datasets = [];
+}
+
 export async function loadFromSupabase(): Promise<void> {
-  if (!supabaseClient || !currentUser) return;
+  if (!supabaseClient || !currentUser) {
+    syncState = "offline";
+    authUpdateCallback?.();
+    return;
+  }
   try {
+    syncState = "syncing";
+    authUpdateCallback?.();
+
     const { data, error } = await supabaseClient
       .from("user_readings")
       .select("payload")
@@ -143,8 +187,12 @@ export async function loadFromSupabase(): Promise<void> {
 
     if (error) {
       console.error("Error loading cloud data:", error.message);
+      syncState = "error";
+      authUpdateCallback?.();
       return;
     }
+
+    clearCharts();
 
     if (data && Array.isArray(data.payload)) {
       datasets = data.payload.map(
@@ -160,15 +208,31 @@ export async function loadFromSupabase(): Promise<void> {
           collapsed: !!d.collapsed,
         }),
       );
-      renderCallback?.(false);
+    } else {
+      datasets = [];
     }
+
+    renderCallback?.(false);
+    syncState = "synced";
+    authUpdateCallback?.();
   } catch (e) {
     console.error("Exception loading cloud data:", e);
+    syncState = "error";
+    authUpdateCallback?.();
+  }
+}
+
+export async function manualReSync(): Promise<void> {
+  if (currentUser) {
+    await loadFromSupabase();
   }
 }
 
 export function loadFromLocalStorage(): void {
-  const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+  clearCharts();
+  const saved =
+    localStorage.getItem(LOCAL_STORAGE_GUEST_KEY) ||
+    localStorage.getItem(LOCAL_STORAGE_LEGACY_KEY);
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
@@ -186,12 +250,12 @@ export function loadFromLocalStorage(): void {
             collapsed: !!d.collapsed,
           }),
         );
-        renderCallback?.(false);
       }
     } catch (e) {
       console.error("Error parsing local state:", e);
     }
   }
+  renderCallback?.(false);
 }
 
 // Data manipulation CRUD

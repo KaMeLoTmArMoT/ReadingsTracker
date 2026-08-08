@@ -9,8 +9,10 @@ import {
   handleGoogleSignIn,
   handleSignOut,
   importCSVEntries,
+  manualReSync,
   moveEntry,
   persistState,
+  syncState,
   toggleCollapse,
   updateEntry,
 } from "./state";
@@ -20,8 +22,33 @@ export function renderAuthUI(): void {
   const badge = document.getElementById("authBadge");
   const label = document.getElementById("userLabel");
   const btn = document.getElementById("authBtn");
+  const syncBtn = document.getElementById("syncBtn");
+  const syncText = document.getElementById("syncStatusText");
 
   if (!badge || !btn || !label) return;
+
+  if (syncBtn && syncText) {
+    const syncIcon = syncBtn.querySelector(".sync-icon");
+    if (currentUser) {
+      syncBtn.style.display = "inline-flex";
+      syncBtn.onclick = () => manualReSync();
+      if (syncState === "syncing") {
+        syncText.textContent = "Syncing...";
+        syncIcon?.classList.add("spin");
+        syncBtn.className = "btn-sync syncing";
+      } else if (syncState === "error") {
+        syncText.textContent = "Sync Error (Retry)";
+        syncIcon?.classList.remove("spin");
+        syncBtn.className = "btn-sync error";
+      } else {
+        syncText.textContent = "Synced";
+        syncIcon?.classList.remove("spin");
+        syncBtn.className = "btn-sync synced";
+      }
+    } else {
+      syncBtn.style.display = "none";
+    }
+  }
 
   if (currentUser) {
     badge.textContent = "Cloud Sync Active";
