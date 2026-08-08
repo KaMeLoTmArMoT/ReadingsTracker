@@ -67,9 +67,13 @@ async function handleGoogleSignIn() {
     promptSupabaseConfig();
     return;
   }
+  const redirectUrl = window.location.protocol.startsWith('http')
+    ? window.location.origin + window.location.pathname
+    : 'https://kamelotmarmot.github.io/ReadingsTracker/';
+
   const { error } = await supabaseClient.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.origin + window.location.pathname }
+    options: { redirectTo: redirectUrl }
   });
   if (error) alert('Login error: ' + error.message);
 }
