@@ -308,12 +308,19 @@ export function addEntry(i: number): void {
 export function updateEntry(
   i: number,
   j: number,
-  field: "date" | "value",
+  field: "date" | "value" | "supplier",
   value: string,
 ): void {
   if (!datasets[i] || !datasets[i].entries[j]) return;
   if (field === "value") {
     datasets[i].entries[j].value = Number(value);
+  } else if (field === "supplier") {
+    const trimmed = value.trim();
+    if (trimmed) {
+      datasets[i].entries[j].supplier = trimmed;
+    } else {
+      delete datasets[i].entries[j].supplier;
+    }
   } else {
     datasets[i].entries[j].date = value;
   }

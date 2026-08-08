@@ -641,6 +641,103 @@ canvas {
   margin-top: 8px;
 }
 
+/* Supplier Pills & Transition Rows */
+.supplier-pills-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.supplier-pills-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.supplier-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.supplier-pill:hover {
+  background: rgba(51, 65, 85, 0.9);
+  border-color: var(--pill-color, var(--accent-primary));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.supplier-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.supplier-pill-name {
+  font-weight: 600;
+}
+
+.supplier-pill-stats {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.supplier-transition-row td {
+  padding: 4px 14px !important;
+  background: rgba(59, 130, 246, 0.08) !important;
+  border-top: 1px dashed rgba(59, 130, 246, 0.3) !important;
+  border-bottom: 1px dashed rgba(59, 130, 246, 0.3) !important;
+}
+
+.supplier-transition-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #93c5fd;
+}
+
+.input-supplier-field {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.input-supplier-field:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.input-supplier-field::placeholder {
+  color: rgba(148, 163, 184, 0.4);
+  font-style: italic;
+}
+
 /* Media Queries */
 @media (max-width: 768px) {
   body {

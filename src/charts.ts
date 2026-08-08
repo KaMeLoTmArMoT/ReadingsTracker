@@ -1,11 +1,26 @@
-import { Chart, type ChartDataset, type Plugin, registerables } from "chart.js";
+import { Chart, type ChartDataset, type ChartType, type Plugin, registerables } from "chart.js";
 import "chartjs-adapter-date-fns";
+
+declare module "chart.js" {
+  interface PluginOptionsByType<TType extends ChartType> {
+    supplierLineTransitions?: {
+      periods?: SupplierPeriodSummary[];
+      highlightedSupplier?: string | null;
+    };
+    supplierBarTransitions?: {
+      periods?: SupplierPeriodSummary[];
+      year?: string;
+      highlightedSupplier?: string | null;
+    };
+  }
+}
 
 import {
   addSyntheticDec31ForClosedYears,
   allocateByMonth,
   findDateAtLevel,
   getActiveMonthForecast,
+  getSupplierSummaries,
   mmddFromRefDate,
   toUTCDate,
 } from "./calculations";
@@ -15,6 +30,7 @@ import type {
   ChartInstance,
   Point2D,
   ReadingEntry,
+  SupplierPeriodSummary,
 } from "./types";
 
 Chart.register(...registerables);
@@ -75,6 +91,256 @@ export const deltaArrowsPlugin: Plugin<"bar"> = {
       ctx.fillText(label, el.x, baseY);
     }
 
+    ctx.restore();
+  },
+};
+
+export const activeHighlightedSupplier: Record<number, string | null> = {};
+
+export function highlightSupplierPeriod(
+  categoryIndex: number,
+  supplierName: string | null,
+): void {
+  activeHighlightedSupplier[categoryIndex] = supplierName;
+  const ds = datasets[categoryIndex];
+  if (!ds) return;
+
+  if (ds.chart) {
+    ds.chart.update?.();
+  }
+  if (ds.barCharts) {
+    for (const key of Object.keys(ds.barCharts)) {
+      ds.barCharts[key]?.update?.();
+    }
+  }
+}
+
+export const supplierLineTransitionsPlugin: Plugin<"line"> = {
+  id: "supplierLineTransitions",
+  afterDraw(
+    chart,
+    _args,
+    options: {
+      periods?: SupplierPeriodSummary[];
+      highlightedSupplier?: string | null;
+    },
+  ) {
+    const periods = options?.periods;
+    if (!periods || periods.length <= 1) return;
+
+    const { ctx, chartArea, scales } = chart;
+    const xScale = scales.x;
+    const yScale = scales.y;
+    if (!xScale || !yScale || !chartArea) return;
+
+    const highlighted = options.highlightedSupplier;
+
+    interface TransitionBadge {
+      xPix: number;
+      period: SupplierPeriodSummary;
+      yearStr: string;
+      isFocused: boolean;
+      yLevel: number;
+    }
+
+    const validBadges: TransitionBadge[] = [];
+
+    for (let pIdx = 1; pIdx < periods.length; pIdx++) {
+      const p = periods[pIdx];
+      if (!p.startDate) continue;
+
+      const yearStr = p.startDate.slice(0, 4);
+      const mmdd = p.startDate.slice(5);
+      const refTime = new Date(`2000-${mmdd}`).getTime();
+      const xPix = xScale.getPixelForValue(refTime);
+
+      if (xPix < chartArea.left || xPix > chartArea.right) continue;
+
+      const isFocused = !highlighted || highlighted === p.supplier;
+      validBadges.push({
+        xPix,
+        period: p,
+        yearStr,
+        isFocused,
+        yLevel: 0,
+      });
+    }
+
+    if (!validBadges.length) return;
+
+    validBadges.sort((a, b) => a.xPix - b.xPix);
+
+    const MIN_X_DIST = 55;
+    for (let idx = 0; idx < validBadges.length; idx++) {
+      let level = 0;
+      for (let prevIdx = 0; prevIdx < idx; prevIdx++) {
+        if (
+          Math.abs(validBadges[idx].xPix - validBadges[prevIdx].xPix) <
+          MIN_X_DIST
+        ) {
+          if (validBadges[prevIdx].yLevel === level) {
+            level++;
+          }
+        }
+      }
+      validBadges[idx].yLevel = level;
+    }
+
+    ctx.save();
+
+    for (const b of validBadges) {
+      const { xPix, period: p, yearStr, isFocused, yLevel } = b;
+      const alphaHex = isFocused ? "FF" : "33";
+
+      // 1. Vertical dashed line
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = `${p.color}${alphaHex}`;
+      ctx.lineWidth = isFocused ? 2 : 1;
+      ctx.moveTo(xPix, chartArea.top);
+      ctx.lineTo(xPix, chartArea.bottom);
+      ctx.stroke();
+
+      // 2. Circle Pin Marker on dataset curve for matching year
+      for (let dsIdx = 0; dsIdx < chart.data.datasets.length; dsIdx++) {
+        const dsLabel = chart.data.datasets[dsIdx]?.label;
+        if (dsLabel === yearStr) {
+          const meta = chart.getDatasetMeta(dsIdx);
+          if (meta?.data?.length) {
+            let closestEl = meta.data[0];
+            let minDist = Math.abs(closestEl.x - xPix);
+            for (const el of meta.data) {
+              const d = Math.abs(el.x - xPix);
+              if (d < minDist) {
+                minDist = d;
+                closestEl = el;
+              }
+            }
+
+            if (closestEl && minDist < 30) {
+              ctx.save();
+              ctx.beginPath();
+              ctx.setLineDash([]);
+              ctx.arc(
+                closestEl.x,
+                closestEl.y,
+                isFocused ? 5 : 3.5,
+                0,
+                Math.PI * 2,
+              );
+              ctx.fillStyle = `${p.color}${alphaHex}`;
+              ctx.fill();
+              ctx.strokeStyle = "#ffffff";
+              ctx.lineWidth = 1.5;
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+        }
+      }
+
+      // 3. Staggered Pill Badge near top
+      const labelText = `🔄 '${yearStr.slice(2)} ${p.supplier}`;
+      ctx.font = "600 10px Inter, sans-serif";
+      const textMetrics = ctx.measureText(labelText);
+      const paddingX = 6;
+      const badgeWidth = textMetrics.width + paddingX * 2;
+      const badgeHeight = 16;
+      const badgeY = chartArea.top + 6 + yLevel * (badgeHeight + 4);
+
+      const rx = xPix - badgeWidth / 2;
+      const ry = badgeY;
+      const radius = 8;
+
+      ctx.beginPath();
+      ctx.setLineDash([]);
+      ctx.moveTo(rx + radius, ry);
+      ctx.lineTo(rx + badgeWidth - radius, ry);
+      ctx.quadraticCurveTo(rx + badgeWidth, ry, rx + badgeWidth, ry + radius);
+      ctx.lineTo(rx + badgeWidth, ry + badgeHeight - radius);
+      ctx.quadraticCurveTo(
+        rx + badgeWidth,
+        ry + badgeHeight,
+        rx + badgeWidth - radius,
+        ry + badgeHeight,
+      );
+      ctx.lineTo(rx + radius, ry + badgeHeight);
+      ctx.quadraticCurveTo(rx, ry + badgeHeight, rx, ry + badgeHeight - radius);
+      ctx.lineTo(rx, ry + radius);
+      ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+      ctx.closePath();
+
+      ctx.fillStyle = isFocused
+        ? "rgba(15, 23, 42, 0.92)"
+        : "rgba(15, 23, 42, 0.4)";
+      ctx.fill();
+      ctx.strokeStyle = `${p.color}${alphaHex}`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = isFocused ? p.color : `${p.color}66`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(labelText, xPix, ry + badgeHeight / 2);
+    }
+
+    ctx.restore();
+  },
+};
+
+export const supplierBarTransitionsPlugin: Plugin<"bar"> = {
+  id: "supplierBarTransitions",
+  afterDraw(
+    chart,
+    _args,
+    options: {
+      periods?: SupplierPeriodSummary[];
+      year?: string;
+      highlightedSupplier?: string | null;
+    },
+  ) {
+    const periods = options?.periods;
+    const year = options?.year;
+    if (!periods || !year || periods.length <= 1) return;
+
+    const { ctx, chartArea, scales } = chart;
+    const xScale = scales.x;
+    const yScale = scales.y;
+    if (!xScale || !yScale || !chartArea) return;
+
+    const highlighted = options.highlightedSupplier;
+
+    ctx.save();
+    for (let pIdx = 1; pIdx < periods.length; pIdx++) {
+      const p = periods[pIdx];
+      if (!p.startDate || !p.startDate.startsWith(year)) continue;
+
+      const monthNum = Number.parseInt(p.startDate.slice(5, 7), 10);
+      const barIndex = monthNum - 1;
+      const meta = chart.getDatasetMeta(0);
+      const el = meta?.data?.[barIndex];
+      if (!el) continue;
+
+      const isFocused = !highlighted || highlighted === p.supplier;
+      const alpha = isFocused ? "FF" : "33";
+
+      const x = el.x;
+      const y = el.y;
+
+      ctx.beginPath();
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = `${p.color}${alpha}`;
+      ctx.lineWidth = 2;
+      ctx.moveTo(x - 12, y - 4);
+      ctx.lineTo(x + 12, y - 4);
+      ctx.stroke();
+
+      ctx.fillStyle = `${p.color}${alpha}`;
+      ctx.font = "600 9px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(`🔄 ${p.supplier}`, x, y - 6);
+    }
     ctx.restore();
   },
 };
@@ -327,6 +593,10 @@ export function drawChart(i: number): void {
         },
       },
       plugins: {
+        supplierLineTransitions: {
+          periods: getSupplierSummaries(datasets[i].entries),
+          highlightedSupplier: activeHighlightedSupplier[i],
+        },
         legend: {
           labels: {
             color: "#e2e8f0",
@@ -372,6 +642,7 @@ export function drawChart(i: number): void {
         },
       },
     },
+    plugins: [supplierLineTransitionsPlugin],
   });
 
   drawBarChart(i, sorted, forecast);
@@ -532,6 +803,11 @@ export function drawBarChart(
           },
         },
         plugins: {
+          supplierBarTransitions: {
+            periods: getSupplierSummaries(datasets[i].entries),
+            year,
+            highlightedSupplier: activeHighlightedSupplier[i],
+          },
           legend: { display: false },
           tooltip: {
             backgroundColor: "rgba(15, 23, 42, 0.9)",
@@ -553,7 +829,7 @@ export function drawBarChart(
           },
         },
       },
-      plugins: [deltaArrowsPlugin],
+      plugins: [deltaArrowsPlugin, supplierBarTransitionsPlugin],
     });
 
     const currentBarMap: Record<string, ChartInstance> =

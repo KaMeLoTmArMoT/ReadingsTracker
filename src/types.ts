@@ -1,6 +1,21 @@
 export interface ReadingEntry {
   date: string;
   value: number;
+  supplier?: string;
+}
+
+export interface EffectiveReadingEntry extends ReadingEntry {
+  effectiveSupplier: string;
+}
+
+export interface SupplierPeriodSummary {
+  supplier: string;
+  startDate: string;
+  endDate: string;
+  startValue: number;
+  endValue: number;
+  totalConsumption: number;
+  color: string;
 }
 
 export interface ComparisonItem {
@@ -16,6 +31,7 @@ export interface ComparisonData {
 export interface ChartInstance {
   destroy: () => void;
   toBase64Image: () => string;
+  update?: (mode?: any) => void;
 }
 
 export interface CategoryDataset {

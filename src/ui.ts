@@ -1,4 +1,9 @@
-import { drawChart, exportLineChart } from "./charts";
+import {
+  drawChart,
+  exportLineChart,
+  highlightSupplierPeriod,
+} from "./charts";
+import { getEffectiveEntries, getSupplierSummaries } from "./calculations";
 import {
   addCategory,
   addEntry,
@@ -85,8 +90,8 @@ export function exportCSV(i: number): void {
   if (!ds) return;
 
   const rows = [
-    ["category", "date", "value"],
-    ...ds.entries.map((e) => [ds.name, e.date, e.value]),
+    ["category", "date", "value", "supplier"],
+    ...ds.entries.map((e) => [ds.name, e.date, e.value, e.supplier || ""]),
   ];
   const csv = rows.map((r) => r.join(",")).join("\n");
 
@@ -110,18 +115,21 @@ export function parseCSVText(text: string): ReadingEntry[] {
   const headerParts = lines[0].split(",").map((s) => s.trim().toLowerCase());
   const dateColIdx = headerParts.indexOf("date");
   const valColIdx = headerParts.indexOf("value");
+  const supplierColIdx = headerParts.indexOf("supplier");
 
   let dateIdx = dateColIdx !== -1 ? dateColIdx : 1;
   let valueIdx = valColIdx !== -1 ? valColIdx : 2;
+  let supplierIdx = supplierColIdx !== -1 ? supplierColIdx : 3;
 
   const hasHeader =
     dateColIdx !== -1 || valColIdx !== -1 || headerParts.includes("category");
 
   if (!hasHeader) {
     const sampleCols = lines[0].split(",");
-    if (sampleCols.length === 2) {
+    if (sampleCols.length >= 2) {
       dateIdx = 0;
       valueIdx = 1;
+      supplierIdx = 2;
     }
   }
 
@@ -130,10 +138,13 @@ export function parseCSVText(text: string): ReadingEntry[] {
   return dataLines
     .map((line) => {
       const parts = line.split(",").map((s) => s.trim());
-      const d = parts[dateIdx] || (parts.length === 2 ? parts[0] : "");
-      const rawVal = parts[valueIdx] || (parts.length === 2 ? parts[1] : "");
+      const d = parts[dateIdx] || (parts.length >= 2 ? parts[0] : "");
+      const rawVal = parts[valueIdx] || (parts.length >= 2 ? parts[1] : "");
+      const supplier = parts[supplierIdx] || "";
       const v = Number(rawVal.replace(",", "."));
-      return { date: d, value: v };
+      const entry: ReadingEntry = { date: d, value: v };
+      if (supplier) entry.supplier = supplier;
+      return entry;
     })
     .filter((r) => r.date && Number.isFinite(r.value));
 }
@@ -252,6 +263,73 @@ export function renderDatasets(shouldPersist = true): void {
 
     const hasData = ds.entries.length > 0;
     const statsChips = renderStatsChips(i);
+    const effectiveEntries = getEffectiveEntries(ds.entries);
+    const supplierSummaries = getSupplierSummaries(ds.entries);
+
+    let supplierPillsHTML = "";
+    if (hasData && supplierSummaries.length > 0) {
+      supplierPillsHTML = `
+        <div class="supplier-pills-bar">
+          <span class="supplier-pills-label">Suppliers:</span>
+          ${supplierSummaries
+            .map(
+              (s) => `
+            <div class="supplier-pill" data-i="${i}" data-supplier="${s.supplier}" style="--pill-color: ${s.color};">
+              <span class="supplier-pill-dot" style="background-color: ${s.color};"></span>
+              <span class="supplier-pill-name">${s.supplier}</span>
+              <span class="supplier-pill-stats">(${Math.round(s.totalConsumption)} units)</span>
+            </div>
+          `,
+            )
+            .join("")}
+        </div>
+      `;
+    }
+
+    let tableRowsHTML = "";
+    for (let j = 0; j < ds.entries.length; j++) {
+      const e = ds.entries[j];
+      const eff = effectiveEntries[j];
+      const prevEff = j > 0 ? effectiveEntries[j - 1] : null;
+
+      const isTransition =
+        j > 0 &&
+        prevEff &&
+        eff &&
+        eff.effectiveSupplier !== prevEff.effectiveSupplier;
+
+      if (isTransition) {
+        tableRowsHTML += `
+          <tr class="supplier-transition-row">
+            <td colspan="5">
+              <div class="supplier-transition-badge">
+                🔄 Supplier Transition: <strong>${eff.effectiveSupplier}</strong>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
+      tableRowsHTML += `
+        <tr>
+          <td class="row-index">${j + 1}</td>
+          <td>
+            <input type="date" class="input-table-date" value="${e.date || ""}" data-i="${i}" data-j="${j}" data-field="date" />
+          </td>
+          <td>
+            <input type="number" step="any" class="input-table-number" value="${Number.isNaN(e.value) ? "" : e.value}" data-i="${i}" data-j="${j}" data-field="value" placeholder="0" />
+          </td>
+          <td>
+            <input type="text" class="input-table-text input-supplier-field" value="${e.supplier || ""}" placeholder="(${eff?.effectiveSupplier || "Inherited"})" data-i="${i}" data-j="${j}" data-field="supplier" title="Supplier name (leave blank to inherit from previous row)" />
+          </td>
+          <td class="controls-cell">
+            <button class="btn-row-action btn-move-up" data-i="${i}" data-j="${j}" title="Move Up">↑</button>
+            <button class="btn-row-action btn-move-down" data-i="${i}" data-j="${j}" title="Move Down">↓</button>
+            <button class="btn-row-action btn-delete" data-i="${i}" data-j="${j}" title="Delete Row">🗑️</button>
+          </td>
+        </tr>
+      `;
+    }
 
     card.innerHTML = `
       <div class="header-controls">
@@ -290,29 +368,12 @@ export function renderDatasets(shouldPersist = true): void {
                 <th style="width: 50px;">#</th>
                 <th>Date</th>
                 <th>Meter Reading Value</th>
+                <th>Supplier</th>
                 <th style="width: 130px; text-align: center;">Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${ds.entries
-                .map(
-                  (e, j) => `
-                <tr>
-                  <td class="row-index">${j + 1}</td>
-                  <td>
-                    <input type="date" class="input-table-date" value="${e.date || ""}" data-i="${i}" data-j="${j}" data-field="date" />
-                  </td>
-                  <td>
-                    <input type="number" step="any" class="input-table-number" value="${Number.isNaN(e.value) ? "" : e.value}" data-i="${i}" data-j="${j}" data-field="value" placeholder="0" />
-                  </td>
-                  <td class="controls-cell">
-                    <button class="btn-row-action btn-move-up" data-i="${i}" data-j="${j}" title="Move Up">↑</button>
-                    <button class="btn-row-action btn-move-down" data-i="${i}" data-j="${j}" title="Move Down">↓</button>
-                    <button class="btn-row-action btn-delete" data-i="${i}" data-j="${j}" title="Delete Row">🗑️</button>
-                  </td>
-                </tr>`,
-                )
-                .join("")}
+              ${tableRowsHTML}
             </tbody>
           </table>
         </div>
@@ -344,6 +405,7 @@ export function renderDatasets(shouldPersist = true): void {
               </div>`
             : ""
         }
+        ${supplierPillsHTML}
         <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
         <div id="bar-container-${i}" class="bar-charts-container"></div>
       </div>
@@ -391,8 +453,22 @@ export function renderDatasets(shouldPersist = true): void {
         const target = e.target as HTMLInputElement;
         const indexI = Number(target.dataset.i);
         const indexJ = Number(target.dataset.j);
-        const field = target.dataset.field as "date" | "value";
+        const field = target.dataset.field as "date" | "value" | "supplier";
         updateEntry(indexI, indexJ, field, target.value);
+      });
+    }
+
+    const supplierPillEls =
+      card.querySelectorAll<HTMLElement>(".supplier-pill");
+    for (const pillEl of supplierPillEls) {
+      pillEl.addEventListener("mouseenter", () => {
+        const indexI = Number(pillEl.dataset.i);
+        const supName = pillEl.dataset.supplier || null;
+        highlightSupplierPeriod(indexI, supName);
+      });
+      pillEl.addEventListener("mouseleave", () => {
+        const indexI = Number(pillEl.dataset.i);
+        highlightSupplierPeriod(indexI, null);
       });
     }
 

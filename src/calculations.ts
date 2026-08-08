@@ -1,4 +1,10 @@
-import type { ActiveForecast, Point2D, ReadingEntry } from "./types";
+import type {
+  ActiveForecast,
+  EffectiveReadingEntry,
+  Point2D,
+  ReadingEntry,
+  SupplierPeriodSummary,
+} from "./types";
 
 export function toUTCDate(yyyyMmDd: string): Date {
   const [y, m, d] = yyyyMmDd.split("-").map(Number);
@@ -237,4 +243,110 @@ export function addSyntheticDec31ForClosedYears(
       ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     }
   }
+}
+
+export const SUPPLIER_PALETTE = [
+  "#3b82f6",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#f97316",
+  "#64748b",
+];
+
+export function getEffectiveEntries(
+  entries: ReadingEntry[],
+): EffectiveReadingEntry[] {
+  const sorted = [...entries]
+    .filter((e) => e.date)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  if (!sorted.length) return [];
+
+  let currentSupplier = "";
+  for (const e of sorted) {
+    if (e.supplier && e.supplier.trim()) {
+      currentSupplier = e.supplier.trim();
+      break;
+    }
+  }
+
+  const result: EffectiveReadingEntry[] = [];
+  for (const entry of sorted) {
+    if (entry.supplier && entry.supplier.trim()) {
+      currentSupplier = entry.supplier.trim();
+    }
+    result.push({
+      ...entry,
+      effectiveSupplier: currentSupplier || "Default Supplier",
+    });
+  }
+
+  return result;
+}
+
+export function getSupplierSummaries(
+  entries: ReadingEntry[],
+): SupplierPeriodSummary[] {
+  const effective = getEffectiveEntries(entries);
+  if (!effective.length) return [];
+
+  const periods: SupplierPeriodSummary[] = [];
+  const supplierColors: Record<string, string> = {};
+  let colorIndex = 0;
+
+  function getColor(supName: string): string {
+    if (!supplierColors[supName]) {
+      supplierColors[supName] =
+        SUPPLIER_PALETTE[colorIndex % SUPPLIER_PALETTE.length];
+      colorIndex++;
+    }
+    return supplierColors[supName];
+  }
+
+  let currentBlock: EffectiveReadingEntry[] = [effective[0]];
+
+  for (let k = 1; k < effective.length; k++) {
+    if (
+      effective[k].effectiveSupplier === effective[k - 1].effectiveSupplier
+    ) {
+      currentBlock.push(effective[k]);
+    } else {
+      const start = currentBlock[0];
+      const end = currentBlock[currentBlock.length - 1];
+      const sup = start.effectiveSupplier;
+      const totalConsumption = Math.max(0, end.value - start.value);
+      periods.push({
+        supplier: sup,
+        startDate: start.date,
+        endDate: end.date,
+        startValue: start.value,
+        endValue: end.value,
+        totalConsumption,
+        color: getColor(sup),
+      });
+
+      currentBlock = [effective[k]];
+    }
+  }
+
+  if (currentBlock.length) {
+    const start = currentBlock[0];
+    const end = currentBlock[currentBlock.length - 1];
+    const sup = start.effectiveSupplier;
+    const totalConsumption = Math.max(0, end.value - start.value);
+    periods.push({
+      supplier: sup,
+      startDate: start.date,
+      endDate: end.date,
+      startValue: start.value,
+      endValue: end.value,
+      totalConsumption,
+      color: getColor(sup),
+    });
+  }
+
+  return periods;
 }
