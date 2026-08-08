@@ -238,10 +238,10 @@ export function drawChart(i: number): void {
       if (y === currentYear) continue;
 
       const pts = yearPointsMap[y];
-      if (!pts?.length) return;
+      if (!pts?.length) continue;
 
       const matchDate = findDateAtLevel(pts, currY);
-      if (!matchDate) return;
+      if (!matchDate) continue;
 
       const matchMMDD = mmddFromRefDate(matchDate);
       const matchX = `${REFERENCE_YEAR}-${matchMMDD}`;
@@ -444,7 +444,8 @@ export function drawBarChart(
 
     const exportBtn = document.createElement("button");
     exportBtn.className = "btn-export-chart-small";
-    exportBtn.innerHTML = `📸 Export ${year}`;
+    exportBtn.innerHTML = "📷 Save PNG";
+    exportBtn.title = `Save ${year} chart as PNG image`;
     exportBtn.onclick = () => {
       const chart = datasets[i].barCharts?.[year];
       downloadChartImage(chart, `${datasets[i].name}-${year}-bars.png`);
@@ -466,6 +467,14 @@ export function drawBarChart(
 
     const ds: ChartDataset<"bar", (number | null)[]>[] = [];
 
+    ds.push({
+      type: "bar",
+      label: `Consumption ${year}`,
+      data: actualData,
+      backgroundColor: `${yearColor}CC`,
+      borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 4, bottomRight: 4 },
+    });
+
     if (
       forecast &&
       year === forecast.activeYear &&
@@ -483,9 +492,9 @@ export function drawBarChart(
           label: `Forecast ${year}`,
           data: predictedDelta,
           backgroundColor: `${yearColor}33`,
-          borderColor: `${yearColor}AA`,
-          borderWidth: 1,
-          borderDash: [3, 3],
+          borderColor: `${yearColor}EE`,
+          borderWidth: 1.5,
+          borderDash: [4, 4],
           borderRadius: {
             topLeft: 4,
             topRight: 4,
@@ -495,14 +504,6 @@ export function drawBarChart(
         } as unknown as ChartDataset<"bar", (number | null)[]>);
       }
     }
-
-    ds.push({
-      type: "bar",
-      label: `Consumption ${year}`,
-      data: actualData,
-      backgroundColor: `${yearColor}CC`,
-      borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 4, bottomRight: 4 },
-    });
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;

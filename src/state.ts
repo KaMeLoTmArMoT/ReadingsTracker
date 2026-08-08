@@ -195,13 +195,16 @@ export function loadFromLocalStorage(): void {
 }
 
 // Data manipulation CRUD
-export function addCategory(name: string): void {
+export function addCategory(
+  name: string,
+  entries: ReadingEntry[] = [],
+): void {
   const cleanName = name.trim();
   if (!cleanName) return;
 
   datasets.push({
     name: cleanName,
-    entries: [],
+    entries,
     chart: null,
     barCharts: {},
     collapsed: true,

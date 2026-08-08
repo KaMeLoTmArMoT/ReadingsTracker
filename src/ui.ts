@@ -72,6 +72,45 @@ export function exportCSV(i: number): void {
   document.body.removeChild(a);
 }
 
+export function parseCSVText(text: string): ReadingEntry[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return [];
+
+  const headerParts = lines[0].split(",").map((s) => s.trim().toLowerCase());
+  const dateColIdx = headerParts.indexOf("date");
+  const valColIdx = headerParts.indexOf("value");
+
+  let dateIdx = dateColIdx !== -1 ? dateColIdx : 1;
+  let valueIdx = valColIdx !== -1 ? valColIdx : 2;
+
+  const hasHeader =
+    dateColIdx !== -1 || valColIdx !== -1 || headerParts.includes("category");
+
+  if (!hasHeader) {
+    const sampleCols = lines[0].split(",");
+    if (sampleCols.length === 2) {
+      dateIdx = 0;
+      valueIdx = 1;
+    }
+  }
+
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+
+  return dataLines
+    .map((line) => {
+      const parts = line.split(",").map((s) => s.trim());
+      const d = parts[dateIdx] || (parts.length === 2 ? parts[0] : "");
+      const rawVal = parts[valueIdx] || (parts.length === 2 ? parts[1] : "");
+      const v = Number(rawVal.replace(",", "."));
+      return { date: d, value: v };
+    })
+    .filter((r) => r.date && Number.isFinite(r.value));
+}
+
 export function importCSV(event: Event, i: number): void {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -82,43 +121,7 @@ export function importCSV(event: Event, i: number): void {
     const text = e.target?.result as string;
     if (!text) return;
 
-    const lines = text
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (!lines.length) return;
-
-    const headerParts = lines[0].split(",").map((s) => s.trim().toLowerCase());
-    const dateColIdx = headerParts.indexOf("date");
-    const valColIdx = headerParts.indexOf("value");
-
-    let dateIdx = dateColIdx !== -1 ? dateColIdx : 1;
-    let valueIdx = valColIdx !== -1 ? valColIdx : 2;
-
-    const hasHeader =
-      dateColIdx !== -1 || valColIdx !== -1 || headerParts.includes("category");
-
-    if (!hasHeader) {
-      const sampleCols = lines[0].split(",");
-      if (sampleCols.length === 2) {
-        dateIdx = 0;
-        valueIdx = 1;
-      }
-    }
-
-    const dataLines = hasHeader ? lines.slice(1) : lines;
-
-    const parsedEntries: ReadingEntry[] = dataLines
-      .map((line) => {
-        const parts = line.split(",").map((s) => s.trim());
-        const d = parts[dateIdx] || (parts.length === 2 ? parts[0] : "");
-        const rawVal = parts[valueIdx] || (parts.length === 2 ? parts[1] : "");
-        const v = Number(rawVal.replace(",", "."));
-        return { date: d, value: v };
-      })
-      .filter((r) => r.date && Number.isFinite(r.value));
-
+    const parsedEntries = parseCSVText(text);
     if (parsedEntries.length > 0) {
       importCSVEntries(i, parsedEntries);
     }
@@ -232,11 +235,15 @@ export function renderDatasets(shouldPersist = true): void {
         <div class="header-action-group">
           ${
             hasData
-              ? `<button class="btn-action btn-export-chart" id="export-line-${i}">
-                  📸 Line Chart
+              ? `<button class="btn-action btn-export" id="export-csv-hdr-${i}">
+                  📥 Export CSV
                 </button>`
               : ""
           }
+          <label class="btn-action btn-import">
+            📤 Import CSV
+            <input type="file" accept=".csv" class="input-csv-file-hdr" data-i="${i}" style="display:none" />
+          </label>
           <button class="btn-action btn-toggle" id="toggle-card-${i}">
             ${ds.collapsed ? "📋 Edit Table" : "📊 Hide Table"}
           </button>
@@ -294,12 +301,22 @@ export function renderDatasets(shouldPersist = true): void {
             <input type="file" accept=".csv" class="input-csv-file" data-i="${i}" style="display:none" />
           </label>
           <button class="btn-action btn-close-table" id="close-table-${i}">
-            ❌ Close Table
+            🔼 Collapse Table
           </button>
         </div>
       </div>
 
       <div class="chart-section">
+        ${
+          hasData
+            ? `<div class="chart-header-bar">
+                <span class="chart-section-title">Relative Consumption Trend</span>
+                <button class="btn-export-chart-small" id="export-line-${i}" title="Save Line Chart as PNG image">
+                  📷 Save PNG
+                </button>
+              </div>`
+            : ""
+        }
         <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
         <div id="bar-container-${i}" class="bar-charts-container"></div>
       </div>
@@ -329,9 +346,16 @@ export function renderDatasets(shouldPersist = true): void {
     if (exportCsvBtn)
       exportCsvBtn.addEventListener("click", () => exportCSV(i));
 
-    const importCsvInput = card.querySelector(`.input-csv-file[data-i="${i}"]`);
-    if (importCsvInput)
-      importCsvInput.addEventListener("change", (e) => importCSV(e, i));
+    const exportCsvHdrBtn = card.querySelector(`#export-csv-hdr-${i}`);
+    if (exportCsvHdrBtn)
+      exportCsvHdrBtn.addEventListener("click", () => exportCSV(i));
+
+    const importCsvInputs = card.querySelectorAll<HTMLInputElement>(
+      `.input-csv-file[data-i="${i}"], .input-csv-file-hdr[data-i="${i}"]`,
+    );
+    for (const inputEl of importCsvInputs) {
+      inputEl.addEventListener("change", (e) => importCSV(e, i));
+    }
 
     const inputElements =
       card.querySelectorAll<HTMLInputElement>("input[data-field]");
@@ -397,6 +421,9 @@ export function setupDOMEvents(): void {
   const input = document.getElementById(
     "newCategory",
   ) as HTMLInputElement | null;
+  const importCategoryInput = document.getElementById(
+    "importCategoryCsvInput",
+  ) as HTMLInputElement | null;
 
   if (addBtn && input) {
     const handleAdd = () => {
@@ -413,6 +440,27 @@ export function setupDOMEvents(): void {
         e.preventDefault();
         handleAdd();
       }
+    });
+  }
+
+  if (importCategoryInput) {
+    importCategoryInput.addEventListener("change", (e) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
+      if (!file) return;
+
+      const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "").trim();
+      const categoryName = fileNameWithoutExt || "New Category";
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const text = evt.target?.result as string;
+        if (!text) return;
+        const entries = parseCSVText(text);
+        addCategory(categoryName, entries);
+        target.value = "";
+      };
+      reader.readAsText(file);
     });
   }
 }
