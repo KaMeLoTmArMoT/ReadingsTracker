@@ -9,9 +9,20 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <div class="container">
+    <div class="auth-bar" id="authBar">
+      <div class="auth-info">
+        <span class="auth-badge guest" id="authBadge">Guest Mode</span>
+        <span id="userLabel" style="font-size: 14px; color: var(--text);">Offline / LocalStorage</span>
+      </div>
+      <div>
+        <button id="authBtn" class="btn-google-auth">Sign in with Google</button>
+      </div>
+    </div>
+
     <h1>Consumption by Categories</h1>
 
     <div id="datasets"></div>

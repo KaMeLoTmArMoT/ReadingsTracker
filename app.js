@@ -1,6 +1,179 @@
 let datasets = [];
 
+// ---------- Supabase / Storage Sync Module ----------
+const LOCAL_STORAGE_KEY = 'readings_tracker_datasets';
+let supabaseClient = null;
+let currentUser = null;
+let saveDebounceTimer = null;
+
+function initSupabase() {
+  const url = window.SUPABASE_URL || localStorage.getItem('VITE_SUPABASE_URL') || '';
+  const key = window.SUPABASE_ANON_KEY || localStorage.getItem('VITE_SUPABASE_ANON_KEY') || '';
+  
+  if (url && key && window.supabase) {
+    try {
+      supabaseClient = window.supabase.createClient(url, key);
+      setupAuthListeners();
+    } catch (e) {
+      console.warn('Supabase init error:', e);
+    }
+  } else {
+    updateAuthUI();
+  }
+}
+
+function setupAuthListeners() {
+  if (!supabaseClient) return;
+
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    currentUser = session?.user || null;
+    updateAuthUI();
+
+    if (currentUser) {
+      await loadFromSupabase();
+    } else {
+      loadFromLocalStorage();
+    }
+  });
+}
+
+function updateAuthUI() {
+  const badge = document.getElementById('authBadge');
+  const label = document.getElementById('userLabel');
+  const btn = document.getElementById('authBtn');
+
+  if (!badge || !btn || !label) return;
+
+  if (currentUser) {
+    badge.textContent = 'Cloud Mode';
+    badge.className = 'auth-badge cloud';
+    label.textContent = currentUser.email || 'Logged in';
+    btn.textContent = 'Sign Out';
+    btn.onclick = handleSignOut;
+  } else {
+    badge.textContent = 'Guest Mode';
+    badge.className = 'auth-badge guest';
+    label.textContent = 'Offline / LocalStorage';
+    btn.textContent = 'Sign in with Google';
+    btn.onclick = handleGoogleSignIn;
+  }
+}
+
+async function handleGoogleSignIn() {
+  if (!supabaseClient) {
+    promptSupabaseConfig();
+    return;
+  }
+  const { error } = await supabaseClient.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin + window.location.pathname }
+  });
+  if (error) alert('Login error: ' + error.message);
+}
+
+async function handleSignOut() {
+  if (supabaseClient) {
+    await supabaseClient.auth.signOut();
+  }
+}
+
+function promptSupabaseConfig() {
+  const url = prompt('Enter your Supabase URL:');
+  const key = prompt('Enter your Supabase Anon Key:');
+  if (url && key) {
+    localStorage.setItem('VITE_SUPABASE_URL', url.trim());
+    localStorage.setItem('VITE_SUPABASE_ANON_KEY', key.trim());
+    initSupabase();
+  }
+}
+
+function persistState() {
+  clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(() => {
+    const serializable = datasets.map(d => ({
+      name: d.name,
+      entries: d.entries,
+      collapsed: d.collapsed
+    }));
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(serializable));
+
+    if (supabaseClient && currentUser) {
+      syncToSupabase(serializable);
+    }
+  }, 300);
+}
+
+async function syncToSupabase(serializableData) {
+  if (!supabaseClient || !currentUser) return;
+  try {
+    const { error } = await supabaseClient
+      .from('user_readings')
+      .upsert({
+        user_id: currentUser.id,
+        data_key: 'readings_data',
+        payload: serializableData,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id, data_key' });
+
+    if (error) console.error('Cloud sync error:', error.message);
+  } catch (e) {
+    console.error('Cloud sync exception:', e);
+  }
+}
+
+async function loadFromSupabase() {
+  if (!supabaseClient || !currentUser) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('user_readings')
+      .select('payload')
+      .eq('user_id', currentUser.id)
+      .eq('data_key', 'readings_data')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error loading cloud data:', error.message);
+      return;
+    }
+
+    if (data && Array.isArray(data.payload)) {
+      datasets = data.payload.map(d => ({
+        name: d.name,
+        entries: d.entries || [],
+        chart: null,
+        barCharts: {},
+        collapsed: !!d.collapsed
+      }));
+      renderDatasets(false);
+    }
+  } catch (e) {
+    console.error('Exception loading cloud data:', e);
+  }
+}
+
+function loadFromLocalStorage() {
+  const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        datasets = parsed.map(d => ({
+          name: d.name,
+          entries: d.entries || [],
+          chart: null,
+          barCharts: {},
+          collapsed: !!d.collapsed
+        }));
+        renderDatasets(false);
+      }
+    } catch (e) {
+      console.error('Error parsing local state:', e);
+    }
+  }
+}
+
 // ---------- CRUD / UI ----------
+
 
 function addDataset() {
   const input = document.getElementById('newCategory');
@@ -788,8 +961,9 @@ function updateStats(i, sorted, yearGroups, yearBaselines) {
 
 // ---------- Render ----------
 
-function renderDatasets() {
+function renderDatasets(shouldPersist = true) {
   const host = document.getElementById('datasets');
+  if (!host) return;
   host.innerHTML = '';
 
   datasets.forEach((ds, i) => {
@@ -844,6 +1018,10 @@ function renderDatasets() {
     host.appendChild(card);
     drawChart(i);
   });
+
+  if (shouldPersist) {
+    persistState();
+  }
 }
 
 // init
@@ -851,13 +1029,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const addBtn = document.getElementById('addCategoryBtn');
   const input = document.getElementById('newCategory');
 
-  addBtn.addEventListener('click', addDataset);
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      addDataset();
-    }
-  });
+  if (addBtn) addBtn.addEventListener('click', addDataset);
+  if (input) {
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addDataset();
+      }
+    });
+  }
 
-  renderDatasets();
+  loadFromLocalStorage();
+  initSupabase();
 });
+
