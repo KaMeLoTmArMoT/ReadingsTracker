@@ -140,7 +140,8 @@ export const supplierLineTransitionsPlugin: Plugin<"line"> = {
       period: SupplierPeriodSummary;
       yearStr: string;
       isFocused: boolean;
-      yLevel: number;
+      curveY: number | null;
+      badgeY: number;
     }
 
     const validBadges: TransitionBadge[] = [];
@@ -157,51 +158,8 @@ export const supplierLineTransitionsPlugin: Plugin<"line"> = {
       if (xPix < chartArea.left || xPix > chartArea.right) continue;
 
       const isFocused = !highlighted || highlighted === p.supplier;
-      validBadges.push({
-        xPix,
-        period: p,
-        yearStr,
-        isFocused,
-        yLevel: 0,
-      });
-    }
 
-    if (!validBadges.length) return;
-
-    validBadges.sort((a, b) => a.xPix - b.xPix);
-
-    const MIN_X_DIST = 55;
-    for (let idx = 0; idx < validBadges.length; idx++) {
-      let level = 0;
-      for (let prevIdx = 0; prevIdx < idx; prevIdx++) {
-        if (
-          Math.abs(validBadges[idx].xPix - validBadges[prevIdx].xPix) <
-          MIN_X_DIST
-        ) {
-          if (validBadges[prevIdx].yLevel === level) {
-            level++;
-          }
-        }
-      }
-      validBadges[idx].yLevel = level;
-    }
-
-    ctx.save();
-
-    for (const b of validBadges) {
-      const { xPix, period: p, yearStr, isFocused, yLevel } = b;
-      const alphaHex = isFocused ? "FF" : "33";
-
-      // 1. Vertical dashed line
-      ctx.beginPath();
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = `${p.color}${alphaHex}`;
-      ctx.lineWidth = isFocused ? 2 : 1;
-      ctx.moveTo(xPix, chartArea.top);
-      ctx.lineTo(xPix, chartArea.bottom);
-      ctx.stroke();
-
-      // 2. Circle Pin Marker on dataset curve for matching year
+      let curveY: number | null = null;
       for (let dsIdx = 0; dsIdx < chart.data.datasets.length; dsIdx++) {
         const dsLabel = chart.data.datasets[dsIdx]?.label;
         if (dsLabel === yearStr) {
@@ -216,37 +174,96 @@ export const supplierLineTransitionsPlugin: Plugin<"line"> = {
                 closestEl = el;
               }
             }
-
-            if (closestEl && minDist < 30) {
-              ctx.save();
-              ctx.beginPath();
-              ctx.setLineDash([]);
-              ctx.arc(
-                closestEl.x,
-                closestEl.y,
-                isFocused ? 5 : 3.5,
-                0,
-                Math.PI * 2,
-              );
-              ctx.fillStyle = `${p.color}${alphaHex}`;
-              ctx.fill();
-              ctx.strokeStyle = "#ffffff";
-              ctx.lineWidth = 1.5;
-              ctx.stroke();
-              ctx.restore();
+            if (closestEl && minDist < 35) {
+              curveY = closestEl.y;
             }
           }
         }
       }
 
-      // 3. Staggered Pill Badge near top
+      validBadges.push({
+        xPix,
+        period: p,
+        yearStr,
+        isFocused,
+        curveY,
+        badgeY: 0,
+      });
+    }
+
+    if (!validBadges.length) return;
+
+    validBadges.sort((a, b) => a.xPix - b.xPix);
+
+    const badgeHeight = 16;
+    for (let idx = 0; idx < validBadges.length; idx++) {
+      const b = validBadges[idx];
+      let y: number;
+
+      if (b.curveY !== null) {
+        y = b.curveY - 20;
+      } else {
+        y = chartArea.top + 6;
+      }
+
+      if (y < chartArea.top + 4) {
+        y = b.curveY !== null ? b.curveY + 8 : chartArea.top + 4;
+      }
+
+      for (let prevIdx = 0; prevIdx < idx; prevIdx++) {
+        const prevB = validBadges[prevIdx];
+        if (Math.abs(b.xPix - prevB.xPix) < 55) {
+          if (Math.abs(y - prevB.badgeY) < 20) {
+            if (prevB.badgeY <= y) {
+              y = prevB.badgeY + 20;
+            } else {
+              y = prevB.badgeY - 20;
+            }
+          }
+        }
+      }
+
+      b.badgeY = Math.max(
+        chartArea.top + 4,
+        Math.min(chartArea.bottom - badgeHeight - 4, y),
+      );
+    }
+
+    ctx.save();
+
+    for (const b of validBadges) {
+      const { xPix, period: p, yearStr, isFocused, curveY, badgeY } = b;
+      const alphaHex = isFocused ? "FF" : "33";
+
+      // 1. Vertical dashed line
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = `${p.color}${alphaHex}`;
+      ctx.lineWidth = isFocused ? 2 : 1;
+      ctx.moveTo(xPix, chartArea.top);
+      ctx.lineTo(xPix, chartArea.bottom);
+      ctx.stroke();
+
+      // 2. Circle Pin Marker on dataset curve for matching year
+      if (curveY !== null) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([]);
+        ctx.arc(xPix, curveY, isFocused ? 5 : 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = `${p.color}${alphaHex}`;
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 3. Curve-aligned Pill Badge
       const labelText = `🔄 '${yearStr.slice(2)} ${p.supplier}`;
       ctx.font = "600 10px Inter, sans-serif";
       const textMetrics = ctx.measureText(labelText);
       const paddingX = 6;
       const badgeWidth = textMetrics.width + paddingX * 2;
-      const badgeHeight = 16;
-      const badgeY = chartArea.top + 6 + yLevel * (badgeHeight + 4);
 
       const rx = xPix - badgeWidth / 2;
       const ry = badgeY;
