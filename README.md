@@ -32,18 +32,20 @@ It’s designed to stay simple: CSV in/out, quick edits, and clear charts per ca
 - PNG export for charts (line chart + per-year bar charts).
 - CSV import/export.
 - Backward-compatible CSV import (old “category,date,value” still loads).
-- **Guest & Cloud Modes:** Works 100% offline out-of-the-box via `localStorage`. Optionally sign in with Google to sync data securely via Supabase.
+- **Guest & Cloud Modes:** Works 100% offline out-of-the-box via `localStorage`. Optionally sign in with Google in 1-click to sync data securely via Supabase.
+- **Automated DB Migrations:** Managed automatically on `git push` via GitHub Actions (`supabase/migrations/`).
 
 ### Built With
 
 - Vanilla JavaScript (no build step).
 - HTML + CSS.
 - Chart.js (via CDN).
-- Supabase JS Client (optional cloud sync & Google OAuth).
+- Supabase JS Client (cloud sync & Google OAuth).
+- GitHub Actions (automated Supabase DB migrations).
 
 ## Cloud Sync & Security Setup
 
-For detailed instructions on configuring free Supabase database sync, Google OAuth, and security limits, see **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)**.
+For detailed instructions on configuring free Supabase database sync, Google OAuth, publishable keys, and RLS security limits, see **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)**.
 
 ## Getting Started
 

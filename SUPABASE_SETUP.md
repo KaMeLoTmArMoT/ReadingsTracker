@@ -50,6 +50,7 @@ To avoid "chicken-and-egg" confusion between Google Cloud and Supabase, follow t
    - **Site URL**: `https://kamelotmarmot.github.io/ReadingsTracker/`
    - **Redirect URLs**: `https://kamelotmarmot.github.io/ReadingsTracker/*`
 5. Click **Save**.
+6. Copy your **Publishable API Key** (`sb_publishable_...` or `anon public`) from **Project Settings** -> **API Keys** and ensure it is set as `DEFAULT_SUPABASE_ANON_KEY` in `app.js`.
 
 ---
 
@@ -63,11 +64,11 @@ Migrations are automated via GitHub Actions (`.github/workflows/supabase-migrati
 3. Select **Transaction pooler** (recommended for GitHub Actions / IPv4 compatibility) -> **URI**.
 4. Copy the **Connection string** (replace `[YOUR-PASSWORD]` with your real Supabase DB password). It looks like:
    `postgresql://postgres.gxbpsbqpuaudtlfliezs:[YOUR-PASSWORD]@aws-1-eu-west-1.pooler.supabase.com:5432/postgres`
-4. Open your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions**.
-5. Click **New repository secret**:
+5. Open your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions**.
+6. Click **New repository secret**:
    - **Name**: `SUPABASE_DB_URL`
-   - **Secret**: Paste the Postgres connection URI from Step 3.
-6. Click **Add secret**.
+   - **Secret**: Paste the Postgres connection URI from Step 4.
+7. Click **Add secret**.
 
 From now on, whenever you or any script add a `.sql` file to `supabase/migrations/` and push to GitHub, the database schema updates automatically!
 
@@ -76,9 +77,10 @@ If you ever want to run SQL manually instead of GitHub Actions, open **Supabase 
 
 ---
 
-## 5. Security & Spam Protection Summary
+## 5. Security & Key Architecture Summary
 
-1. **OAuth Barrier:** Registration requires a valid Google account, stopping automated email spam bots.
-2. **Postgres RLS:** Prevents unauthorized reads/writes across user boundaries.
-3. **Trigger Quotas:** Prevents single account DB spam (max 20 records per user, max 500 KB per payload).
-4. **Cloudflare Proxy (Optional):** Wrap custom domain with Cloudflare WAF/DDoS rules for domain protection.
+1. **Publishable Key (`sb_publishable_...` / `anon`):** Designed specifically for frontend client-side code (`app.js`). Safe for public repositories when combined with strict RLS.
+2. **Secret Key (`service_role`):** NEVER publish in client code or repositories. Bypasses RLS with full admin rights.
+3. **OAuth Barrier:** Registration requires a valid Google account, stopping automated email spam bots.
+4. **Postgres RLS:** Enforces strict user-level data isolation (`auth.uid() = user_id`). Users can only query, insert, update, or delete their own rows.
+5. **Trigger Quotas:** Defense-in-depth quota limits per user account (max 20 data blocks, max 500 KB per payload).
