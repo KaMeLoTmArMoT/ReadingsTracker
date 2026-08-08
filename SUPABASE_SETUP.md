@@ -1,86 +1,81 @@
 # Supabase + Google OAuth Setup & Security Guide
 
-This document provides a step-by-step guide to setting up Google OAuth authentication and Supabase database synchronization with strict security constraints and zero-cost guarantees for **ReadingsTracker**.
+This guide details the exact steps to configure Google OAuth, Supabase database sync, automated GitHub Actions migrations, and zero-cost security rules for **ReadingsTracker**.
 
 ---
 
-## 1. Zero-Cost & Cost Safety Principles
+## 1. Zero-Cost & Cost Safety Guarantees
 
-- **Google Cloud Platform (OAuth 2.0):** Standard Web OAuth 2.0 sign-in is **100% free** with no limits. Never enable billing on GCP for this setup.
-- **Supabase:** The Free Tier includes 500 MB PostgreSQL, 50,000 Monthly Active Users (MAUs), and 1 GB storage **free forever**.
-- **Billing Shield:** Do **NOT** attach a credit card in GCP or Supabase Billing settings. Without a payment method, charges cannot occur; Supabase will simply restrict access if limits are reached rather than billing.
+* **Google Cloud Platform (OAuth 2.0):** Standard Web OAuth 2.0 is **100% free** with no usage caps. Never attach a payment method to GCP for this setup.
+* **Supabase Free Tier:** Includes 500 MB PostgreSQL, 50,000 MAUs, and 1 GB storage **free forever**.
+* **Billing Shield:** Do **NOT** add a credit card in Supabase or GCP billing settings. Without a card, overages cannot trigger charges—Supabase simply switches to Read-Only mode if limits are reached.
 
 ---
 
-## 2. Step-by-Step Google & Supabase Integration
-
-To avoid "chicken-and-egg" confusion between Google Cloud and Supabase, follow this exact sequence:
+## 2. Integration Steps
 
 ### Step 1: Copy Callback URL from Supabase
 1. Log in to [Supabase Dashboard](https://supabase.com/dashboard) and open your project.
-2. Navigate to **Authentication** -> **Providers** -> **Google**.
-3. Copy the **Callback URL (Redirect URL)** shown there (it looks like `https://<your-project-ref>.supabase.co/auth/v1/callback`).
-   *(Leave this tab open)*.
+2. Go to **Authentication** → **Providers** → **Google**.
+3. Copy the **Callback URL (Redirect URL)** (format: `https://<project-ref>.supabase.co/auth/v1/callback`).
 
 ### Step 2: Create Credentials in Google Cloud Console
 1. Open [Google Cloud Console](https://console.cloud.google.com/).
 2. Create a new project (e.g. `readings-tracker-auth`).
-3. Navigate to **APIs & Services** -> **OAuth consent screen**:
-   - Choose **External** -> Click **Create**.
+3. Navigate to **APIs & Services** → **OAuth consent screen**:
+   - Select **External** → Click **Create**.
    - App name: `ReadingsTracker`
-   - User support email: your email
-   - Developer contact information: your email
-   - Click **Save and Continue** through the remaining steps.
-4. Navigate to **APIs & Services** -> **Credentials**:
-   - Click **+ CREATE CREDENTIALS** -> **OAuth client ID**.
-   - Application type: **Web application**.
-   - Name: `ReadingsTracker Web Client`.
-   - **Authorized JavaScript origins**:
-     - `https://kamelotmarmot.github.io`
-   - **Authorized redirect URIs**:
-     - **Paste** the Callback URL copied from Supabase in Step 1.
+   - Fill support/contact emails → Click **Save and Continue**.
+4. Navigate to **APIs & Services** → **Credentials**:
+   - Click **+ CREATE CREDENTIALS** → **OAuth client ID** → **Web application**.
+   - **Authorized JavaScript origins**: `https://kamelotmarmot.github.io`
+   - **Authorized redirect URIs**: Paste the Supabase Callback URL from Step 1.
    - Click **CREATE**.
 5. Copy the generated **Client ID** and **Client Secret**.
 
-### Step 3: Finish Configuration in Supabase
-1. Return to your **Supabase Dashboard** tab (**Authentication** -> **Providers** -> **Google**).
-2. **Paste** the **Client ID** and **Client Secret** from Google (Step 2).
-3. Toggle **Enable Google provider** ON and click **Save**.
-4. Navigate to **Authentication** -> **URL Configuration**:
+### Step 3: Finalize Supabase Configuration
+1. Return to **Supabase Dashboard** → **Authentication** → **Providers** → **Google**.
+2. Paste **Client ID** and **Client Secret**, toggle **Enable Google provider** ON, and click **Save**.
+3. Go to **Authentication** → **URL Configuration**:
    - **Site URL**: `https://kamelotmarmot.github.io/ReadingsTracker/`
    - **Redirect URLs**: `https://kamelotmarmot.github.io/ReadingsTracker/*`
-5. Click **Save**.
-6. Copy your **Publishable API Key** (`sb_publishable_...` or `anon public`) from **Project Settings** -> **API Keys** and ensure it is set as `DEFAULT_SUPABASE_ANON_KEY` in `app.js`.
+4. Click **Save**.
+5. Copy your **Publishable API Key** (`anon public`) from **Project Settings** → **API Keys** and ensure it is assigned to `DEFAULT_SUPABASE_ANON_KEY` in `app.js`.
 
 ---
 
-## 4. Automatic Database Migrations (GitHub Actions)
+## 3. Automated Database Migrations (GitHub Actions)
 
-Migrations are automated via GitHub Actions (`.github/workflows/supabase-migrations.yml`). Every time a new SQL migration file is added to `supabase/migrations/` and pushed to GitHub, it will automatically execute in your Supabase database.
+Migrations run automatically via GitHub Actions (`.github/workflows/supabase-migrations.yml`) whenever SQL files are pushed to `supabase/migrations/`.
 
-### One-Time Setup for GitHub Secrets:
+### Initial Setup for GitHub Secrets:
 1. Open your project in [Supabase Dashboard](https://supabase.com/dashboard).
-2. Click the **Connect** button at the very top of the page (next to your project name) **OR** go to **Database** (cylinder icon in the main left sidebar).
-3. Select **Transaction pooler** (recommended for GitHub Actions / IPv4 compatibility) -> **URI**.
-4. Copy the **Connection string** (replace `[YOUR-PASSWORD]` with your real Supabase DB password). It looks like:
-   `postgresql://postgres.gxbpsbqpuaudtlfliezs:[YOUR-PASSWORD]@aws-1-eu-west-1.pooler.supabase.com:5432/postgres`
-5. Open your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions**.
-6. Click **New repository secret**:
+2. Go to **Database** → **Transaction pooler** → **URI**.
+3. Copy the Connection string (replace `[YOUR-PASSWORD]` with your database password):
+   `postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-1-eu-west-1.pooler.supabase.com:5432/postgres`
+4. In your GitHub Repository, go to **Settings** → **Secrets and variables** → **Actions**.
+5. Click **New repository secret**:
    - **Name**: `SUPABASE_DB_URL`
-   - **Secret**: Paste the Postgres connection URI from Step 4.
-7. Click **Add secret**.
-
-From now on, whenever you or any script add a `.sql` file to `supabase/migrations/` and push to GitHub, the database schema updates automatically!
-
-### Manual Fallback (Supabase SQL Editor)
-If you ever want to run SQL manually instead of GitHub Actions, open **Supabase SQL Editor** and run the contents of [`supabase/migrations/20260808000000_schema_and_security.sql`](file:///g:/programming/Plugins/Tracker/supabase/migrations/20260808000000_schema_and_security.sql).
+   - **Secret**: Paste the Connection URI.
 
 ---
 
-## 5. Security & Key Architecture Summary
+## 4. Security Architecture & RLS Rules
 
-1. **Publishable Key (`sb_publishable_...` / `anon`):** Designed specifically for frontend client-side code (`app.js`). Safe for public repositories when combined with strict RLS.
-2. **Secret Key (`service_role`):** NEVER publish in client code or repositories. Bypasses RLS with full admin rights.
-3. **OAuth Barrier:** Registration requires a valid Google account, stopping automated email spam bots.
-4. **Postgres RLS:** Enforces strict user-level data isolation (`auth.uid() = user_id`). Users can only query, insert, update, or delete their own rows.
-5. **Trigger Quotas:** Defense-in-depth quota limits per user account (max 20 data blocks, max 500 KB per payload).
+```text
+[ User / Bot ] ──► [ GitHub Pages ] ──► [ Google OAuth 2.0 ] ──► [ Supabase Postgres ]
+                                                                        │ (RLS + Quotas)
+```
+
+| Security Layer | Technical Mechanism | Enforcement Location |
+|---|---|---|
+| **OAuth 2.0 Barrier** | Registration requires a valid Google account (prevents spam bots) | Google Cloud / Supabase Auth |
+| **Row Level Security (RLS)** | `auth.uid() = user_id` limits user operations strictly to their own rows | `supabase/migrations/` |
+| **Payload Size Constraint** | `pg_column_size(payload) <= 524288` (Max 500 KB per entry) | Postgres Check Constraint |
+| **Account Quota Limit** | `check_user_readings_limit` trigger caps records at 20 per account | Postgres Function Trigger |
+| **Rate Limiting** | Built-in IP rate limits (30 sign-ins / 5 min) | Supabase API Gateway |
+
+### Dashboard Settings Reference:
+* **Redirect URLs:** `https://kamelotmarmot.github.io/ReadingsTracker/*` (**Required**).
+* **hCaptcha / Password Checks:** Keep **Disabled** (Redundant for OAuth-only setups).
+* **IP Address Forwarding:** Keep **Disabled** (Not needed for client-side web apps).

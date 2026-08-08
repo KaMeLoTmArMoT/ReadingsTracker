@@ -1,138 +1,91 @@
 <div align="center">
-  <h3 align="center">Tracker</h3>
 
-  <p align="center">
-    A minimal, browser-only, single-page tracker for meter/consumption readings.
-    <br />
-    Add categories → enter dated readings → see yearly overlays + monthly bar breakdowns.
-    <br /><br />
-    <a href="https://kamelotmarmot.github.io/ReadingsTracker/"><strong>View Demo »</strong></a>
-    ·
-    <a href="https://github.com/KaMeLoTmArMoT/ReadingsTracker/issues">Report Bug</a>
-    ·
-    <a href="https://github.com/KaMeLoTmArMoT/ReadingsTracker/issues">Request Feature</a>
-  </p>
+# ⚡ ReadingsTracker
+
+**A sleek, privacy-first, zero-cost dashboard for tracking utility consumption (Gas, Electricity, Water) with multi-year chart overlays & instant 1-click cloud sync.**
+
+[![Live Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-brightgreen?style=for-the-badge&logo=github)](https://kamelotmarmot.github.io/ReadingsTracker/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![Supabase](https://img.shields.io/badge/Cloud-Supabase-emerald?style=for-the-badge&logo=supabase)](SUPABASE_SETUP.md)
+
+<br />
+
+[**🚀 Try Live Demo**](https://kamelotmarmot.github.io/ReadingsTracker/) • [**📘 Supabase Setup Guide**](SUPABASE_SETUP.md) • [**🐛 Report Issue**](https://github.com/KaMeLoTmArMoT/ReadingsTracker/issues)
+
 </div>
 
-## About The Project
+---
 
-Tracker is a tiny browser-only dashboard for tracking consumption-like counters (gas, electricity, water, etc.) over time.
-It’s designed to stay simple: CSV in/out, quick edits, and clear charts per category.
+## 🌟 Why ReadingsTracker?
 
-<p align="center">
-   <img src="assets/readings_example_multi_year.png" width="720" alt="Main UI">
-</p>
-
-### Key Features
-
-- Multiple categories (each category has its own table + charts).
-- Date/value readings with row reorder, delete, and quick add.
-- Line chart: yearly overlay (normalized to compare years).
-- Bar charts: monthly totals per year (always months 01–12, zeros if missing).
-- PNG export for charts (line chart + per-year bar charts).
-- CSV import/export.
-- Backward-compatible CSV import (old “category,date,value” still loads).
-- **Guest & Cloud Modes:** Works 100% offline out-of-the-box via `localStorage`. Optionally sign in with Google in 1-click to sync data securely via Supabase.
-- **Automated DB Migrations:** Managed automatically on `git push` via GitHub Actions (`supabase/migrations/`).
-
-### Built With
-
-- Vanilla JavaScript (no build step).
-- HTML + CSS.
-- Chart.js (via CDN).
-- Supabase JS Client (cloud sync & Google OAuth).
-- GitHub Actions (automated Supabase DB migrations).
-
-## Cloud Sync & Security Setup
-
-For detailed instructions on configuring free Supabase database sync, Google OAuth, publishable keys, and RLS security limits, see **[SUPABASE_SETUP.md](SUPABASE_SETUP.md)**.
-
-## Getting Started
-
-### Prerequisites
-
-- A modern browser (Chrome/Firefox/Safari).
-- CSV exported as UTF‑8 (recommended).
-
-### Installation
-
-1. Clone the repo:
-   ```bash
-   git clone https://github.com/KaMeLoTmArMoT/ReadingsTracker.git
-   cd ReadingsTracker
-   ```
-
-2. Run a local static server (recommended):
-   ```bash
-   python3 -m http.server 8000 --bind 0.0.0.0
-   ```
-
-3. Open in browser:
-   - Desktop: http://localhost:8000/
-   - Phone (same Wi‑Fi): http://<YOUR_PC_LAN_IP>:8000/
-
-## Usage
-
-1. Open the app (local).
-2. Add a category (e.g., “Gas”).
-3. Add rows and enter readings (date + value).
+ReadingsTracker is built for anyone who wants a clean, ultra-fast visual tracker for utility meters without bloat, subscriptions, or complex setup. Works **100% offline out-of-the-box** and seamlessly syncs to the cloud across your devices with a single click.
 
 <p align="center">
-   <img src="assets/readings_input.png" width="480" alt="Readings Input">
+  <img src="assets/readings_example_multi_year.png" width="800" alt="ReadingsTracker Dashboard Overview">
 </p>
 
-4. Use Export CSV / Import CSV to save/restore.
-5. Use “Export Line Chart” / “Export YYYY” to download PNG images.
+---
 
-### CSV Format
+## ✨ Key Features
 
-**New format (recommended):**
+- 📊 **Multi-Year Overlay Analytics:** Normalize readings across different years to compare consumption patterns side-by-side.
+- 📅 **Monthly Totals Breakdown:** Automatic monthly sum calculation (months 01–12) with missing month zero-filling.
+- 🔒 **Guest & Cloud Dual Mode:**
+  - **Guest Mode:** 100% private, works completely offline using `localStorage`.
+  - **Cloud Mode:** 1-click Google OAuth login with instant cloud synchronization via Supabase.
+- 🛡️ **Zero-Cost Security Shield:** Built-in Postgres Row Level Security (RLS), 500 KB payload limits, and max 20 data blocks quota enforcement. **Zero credit card required.**
+- 📤 **CSV Import & Export:** Full backward compatibility for legacy CSV formats (`category, date, value`).
+- 📸 **High-Res PNG Export:** Download beautiful PNG snapshots of your multi-year line charts and monthly bar charts.
+- 📱 **Mobile-Friendly:** Responsive design for desktop, tablet, and smartphone browsers.
+
+---
+
+## ⚡ Quick Start
+
+### 1. Web / GitHub Pages (Recommended)
+Launch directly in your browser without installing anything:
+👉 **[Open Live App](https://kamelotmarmot.github.io/ReadingsTracker/)**
+
+### 2. Local Development
+Run locally in 3 simple commands (no Node.js build steps required):
+
+```bash
+git clone https://github.com/KaMeLoTmArMoT/ReadingsTracker.git
+cd ReadingsTracker
+python3 -m http.server 8000
+```
+Open `http://localhost:8000` in your browser.
+
+---
+
+## 📊 CSV Format Specification
+
+### Standard Format (Recommended):
 ```csv
 category,date,value,cost_per_unit,currency,unit
 gas,2025-01-01,100,0.20,EUR,m3
 gas,2025-02-01,120,0.20,EUR,m3
 ```
 
-**Legacy format (supported for import):**
+### Legacy Format (Supported for Import):
 ```csv
 category,date,value
 gas,2025-01-01,100
 gas,2025-02-01,120
 ```
 
-### Sample CSV
+📁 **Sample CSV:** Download [examples/electricity_multi_year.csv](examples/electricity_multi_year.csv) to test imports.
 
-- [Electricity_Multi_Year](examples/electricity_multi_year.csv)
+---
 
-Headers:
-`category | date | value`
+## ☁️ Cloud Sync & Database Setup
 
-## Roadmap
+Want to set up your own free Supabase cloud backend and Google OAuth login? Follow our comprehensive step-by-step guide:
 
-- Auto-save/load to localStorage.
-- Average daily/monthly consumption stats.
-- Rate periods (time ranges) + correct cost splitting across rate changes.
-- Better import UX (drag & drop zone, preview).
+👉 **[Read SUPABASE_SETUP.md](SUPABASE_SETUP.md)**
 
-See the [open issues](https://github.com/KaMeLoTmArMoT/ReadingsTracker/issues).
+---
 
-## Contributing
+## 📜 License
 
-Contributions are welcome:
-1. Fork the repo
-2. Create a feature branch
-3. Open a PR
-
-For bug reports, please include:
-- Device + browser
-- Steps to reproduce
-- A small CSV sample (or screenshot)
-
-## License
-
-This project is licensed under the MIT License — see [`LICENSE`](https://github.com/KaMeLoTmArMoT/ReadingsTracker/blob/master/LICENSE).
-
-## Acknowledgments
-
-- README structure inspired by Best-README-Template.
-- Built with assistance from generative AI tools for ideation and code suggestions; all changes were reviewed and tested by the author.
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information.
