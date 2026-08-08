@@ -29,52 +29,51 @@ ReadingsTracker is built for anyone who wants a clean, ultra-fast visual tracker
 ## ✨ Key Features
 
 - 📊 **Multi-Year Overlay Analytics:** Normalize readings across different years to compare consumption patterns side-by-side.
-- 📅 **Monthly Totals Breakdown:** Automatic monthly sum calculation (months 01–12) with missing month zero-filling.
+- 📈 **Forecast Predictions & Same-Level Connector:** End-of-month forecast interpolation for active year and cross-year level comparisons.
+- 📅 **Monthly Totals & Delta Arrows:** Automatic monthly sum calculation with percentage delta badges (`↑ +12%`, `↓ -5%`).
 - 🔒 **Guest & Cloud Dual Mode:**
   - **Guest Mode:** 100% private, works completely offline using `localStorage`.
   - **Cloud Mode:** 1-click Google OAuth login with instant cloud synchronization via Supabase.
-- 🛡️ **Zero-Cost Security Shield:** Built-in Postgres Row Level Security (RLS), 500 KB payload limits, and max 20 data blocks quota enforcement. **Zero credit card required.**
-- 📤 **CSV Import & Export:** Full backward compatibility for legacy CSV formats (`category, date, value`).
-- 📸 **High-Res PNG Export:** Download beautiful PNG snapshots of your multi-year line charts and monthly bar charts.
-- 📱 **Mobile-Friendly:** Responsive design for desktop, tablet, and smartphone browsers.
+- 🛠️ **Modern Vite + TypeScript + Biome Stack:** Strict type safety, instant HMR, fast compilation, and clean code formatting.
+- 📤 **CSV Import & Export:** Full backward compatibility for CSV format.
+- 📸 **High-Res PNG Export:** Download PNG snapshots of line charts and monthly bar charts.
+- 📱 **Responsive Glassmorphism UI:** Modern dark theme styling designed for mobile, tablet, and desktop.
 
 ---
 
-## ⚡ Quick Start
-
-### 1. Web / GitHub Pages (Recommended)
-Launch directly in your browser without installing anything:
-👉 **[Open Live App](https://kamelotmarmot.github.io/ReadingsTracker/)**
-
-### 2. Local Development
-Run locally in 3 simple commands (no Node.js build steps required):
+## ⚡ Local Development
 
 ```bash
+# 1. Clone repository
 git clone https://github.com/KaMeLoTmArMoT/ReadingsTracker.git
 cd ReadingsTracker
-python3 -m http.server 8000
+
+# 2. Install dependencies
+npm install
+
+# 3. Start local development server
+npm run dev
+
+# 4. Lint & format code with Biome
+npm run lint
+npm run format
+
+# 5. Build for production
+npm run build
 ```
-Open `http://localhost:8000` in your browser.
 
 ---
 
 ## 📊 CSV Format Specification
 
-### Standard Format (Recommended):
-```csv
-category,date,value,cost_per_unit,currency,unit
-gas,2025-01-01,100,0.20,EUR,m3
-gas,2025-02-01,120,0.20,EUR,m3
-```
-
-### Legacy Format (Supported for Import):
+### Standard Format:
 ```csv
 category,date,value
 gas,2025-01-01,100
 gas,2025-02-01,120
 ```
 
-📁 **Sample CSV:** Download [examples/electricity_multi_year.csv](examples/electricity_multi_year.csv) to test imports.
+📁 **Sample CSV:** Download [examples/Electricity_Multi_Year.csv](examples/Electricity_Multi_Year.csv) to test imports.
 
 ---
 

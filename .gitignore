@@ -1,1 +1,8 @@
-.idea
+node_modules/
+dist/
+.idea/
+.vscode/
+demo_data/
+.env
+.env.local
+*.log

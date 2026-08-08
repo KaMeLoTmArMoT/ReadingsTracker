@@ -3,36 +3,42 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Consumption by Categories</title>
-
-  <link rel="stylesheet" href="./styles.css" />
-
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <title>ReadingsTracker — Consumption by Categories</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
   <div class="container">
-    <div class="auth-bar" id="authBar">
+    <!-- Top Auth Bar -->
+    <header class="auth-bar" id="authBar">
       <div class="auth-info">
         <span class="auth-badge guest" id="authBadge">Guest Mode</span>
-        <span id="userLabel" style="font-size: 14px; color: var(--text);">Offline / LocalStorage</span>
+        <span id="userLabel" class="user-status-label">Offline / LocalStorage</span>
       </div>
       <div>
-        <button id="authBtn" class="btn-google-auth">Sign in with Google</button>
+        <button id="authBtn" class="btn-action btn-google-auth">Sign in with Google</button>
+      </div>
+    </header>
+
+    <!-- Application Header -->
+    <div class="app-header">
+      <div class="app-title-group">
+        <h1>Consumption Tracker</h1>
+        <p class="app-subtitle">Track and analyze utility meter readings across categories and years</p>
+      </div>
+
+      <div class="new-category-bar">
+        <input type="text" id="newCategory" class="new-category-input" placeholder="New category name (e.g. Gas, Electricity)" />
+        <button id="addCategoryBtn" class="btn-action btn-primary" type="button">+ Add Category</button>
       </div>
     </div>
 
-    <h1>Consumption by Categories</h1>
-
-    <div id="datasets"></div>
-
-    <div class="new-category">
-      <input type="text" id="newCategory" placeholder="New category name (e.g. Gas)" />
-      <button id="addCategoryBtn" type="button">Add Category</button>
-    </div>
+    <!-- Category Datasets Container -->
+    <main id="datasets"></main>
   </div>
 
-  <script defer src="./app.js"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
