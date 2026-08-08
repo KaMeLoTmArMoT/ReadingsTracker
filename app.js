@@ -1,14 +1,17 @@
 let datasets = [];
 
 // ---------- Supabase / Storage Sync Module ----------
+const DEFAULT_SUPABASE_URL = 'https://gxbpsbqpuaudtlfliezs.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z';
+
 const LOCAL_STORAGE_KEY = 'readings_tracker_datasets';
 let supabaseClient = null;
 let currentUser = null;
 let saveDebounceTimer = null;
 
 function initSupabase() {
-  const url = window.SUPABASE_URL || localStorage.getItem('VITE_SUPABASE_URL') || '';
-  const key = window.SUPABASE_ANON_KEY || localStorage.getItem('VITE_SUPABASE_ANON_KEY') || '';
+  const url = window.SUPABASE_URL || DEFAULT_SUPABASE_URL || localStorage.getItem('VITE_SUPABASE_URL') || '';
+  const key = window.SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY || localStorage.getItem('VITE_SUPABASE_ANON_KEY') || '';
   
   if (url && key && window.supabase) {
     try {
