@@ -40,7 +40,7 @@ This guide details the exact steps to configure Google OAuth, Supabase database 
    - **Site URL**: `https://kamelotmarmot.github.io/ReadingsTracker/`
    - **Redirect URLs**: `https://kamelotmarmot.github.io/ReadingsTracker/*`
 4. Click **Save**.
-5. Copy your **Publishable API Key** (`anon public`) from **Project Settings** → **API Keys** and ensure it is assigned to `DEFAULT_SUPABASE_ANON_KEY` in `app.js`.
+5. Copy your **Publishable API Key** (`anon public`) from **Project Settings** → **API Keys** and ensure it is assigned to `DEFAULT_SUPABASE_ANON_KEY` in `src/state.ts`.
 
 ---
 
