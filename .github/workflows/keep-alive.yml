@@ -2,36 +2,34 @@ name: Supabase Keep-Alive
 
 on:
   schedule:
-    # Runs every 3 days at 06:00 UTC (e.g. 1st, 4th, 7th... day of month)
-    - cron: '0 6 */3 * *'
+    # Runs daily at 06:17 UTC (non-peak hour to avoid GitHub scheduler delays)
+    - cron: '17 6 * * *'
   workflow_dispatch:
 
 jobs:
   ping:
-    name: Ping Supabase REST API
+    name: Ping Supabase Database
     runs-on: ubuntu-latest
     steps:
-      - name: Random Jitter Delay (0-90 minutes)
+      - name: Random Jitter Delay (0-10 minutes)
         run: |
-          DELAY=$(( RANDOM % 5400 ))
-          echo "Sleeping for $DELAY seconds to prevent static scheduled pattern..."
+          DELAY=$(( RANDOM % 600 ))
+          echo "Sleeping for $DELAY seconds before pinging..."
           sleep $DELAY
 
-      - name: Ping PostgREST Endpoint
+      - name: Query Supabase Table (triggers real DB activity)
         run: |
           STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X GET "https://gxbpsbqpuaudtlfliezs.supabase.co/rest/v1/" \
+            -X GET "https://gxbpsbqpuaudtlfliezs.supabase.co/rest/v1/user_readings?select=id&limit=1" \
             -H "apikey: sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z" \
             -H "Authorization: Bearer sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
             -H "Accept: application/json")
           
           echo "Supabase Response HTTP Code: $STATUS_CODE"
           
-          # HTTP 200 is expected for PostgREST root schema endpoint with valid API key
           if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
-            echo "Ping successful! Supabase project is active."
+            echo "Ping successful! Database query registered."
           else
-            echo "Failed to ping Supabase (status $STATUS_CODE)."
+            echo "Failed to query Supabase (status $STATUS_CODE)."
             exit 1
           fi
