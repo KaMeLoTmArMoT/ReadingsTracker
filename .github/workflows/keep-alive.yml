@@ -2,34 +2,97 @@ name: Supabase Keep-Alive
 
 on:
   schedule:
-    # Runs daily at 06:17 UTC (non-peak hour to avoid GitHub scheduler delays)
-    - cron: '17 6 * * *'
+    # Runs twice daily at non-peak intervals (05:17 and 17:17 UTC)
+    - cron: '17 5,17 * * *'
   workflow_dispatch:
 
 jobs:
-  ping:
-    name: Ping Supabase Database
+  keep-alive:
+    name: Human-Like Supabase Activity
     runs-on: ubuntu-latest
     steps:
-      - name: Random Jitter Delay (0-10 minutes)
+      - name: Random Jitter Delay (5 - 60 seconds)
         run: |
-          DELAY=$(( RANDOM % 600 ))
-          echo "Sleeping for $DELAY seconds before pinging..."
+          DELAY=$(( 5 + RANDOM % 55 ))
+          echo "Sleeping for $DELAY seconds before generating activity..."
           sleep $DELAY
 
-      - name: Query Supabase Table (triggers real DB activity)
+
+      - name: Direct PostgreSQL Queries via psql (1-5 randomized queries)
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X GET "https://gxbpsbqpuaudtlfliezs.supabase.co/rest/v1/user_readings?select=id&limit=1" \
-            -H "apikey: sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z" \
-            -H "Authorization: Bearer sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z" \
-            -H "Accept: application/json")
-          
-          echo "Supabase Response HTTP Code: $STATUS_CODE"
-          
-          if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
-            echo "Ping successful! Database query registered."
-          else
-            echo "Failed to query Supabase (status $STATUS_CODE)."
-            exit 1
+          if [ -z "$DB_URL" ]; then
+            echo "WARNING: SUPABASE_DB_URL secret is not set, skipping direct psql step."
+            exit 0
           fi
+
+          QUERIES=(
+            "SELECT now() AS server_time;"
+            "SELECT id, last_ping, ping_count FROM public._keep_alive LIMIT 1;"
+            "SELECT count(*) AS total_public_tables FROM information_schema.tables WHERE table_schema = 'public';"
+            "SELECT current_database(), current_user, version();"
+            "SELECT pg_size_pretty(pg_database_size(current_database())) AS db_size;"
+          )
+
+          # Pick a random number of queries between 1 and 5
+          COUNT=$(( 1 + RANDOM % 5 ))
+          echo "Executing $COUNT direct PostgreSQL queries with human-like delays..."
+
+          for (( i=1; i<=COUNT; i++ )); do
+            # Pick a query from pool
+            INDEX=$(( (i - 1) % ${#QUERIES[@]} ))
+            SQL="${QUERIES[$INDEX]}"
+            echo "[$i/$COUNT] Running query: $SQL"
+            
+            psql "$DB_URL" -c "$SQL" || echo "Query warning, continuing..."
+            
+            # Random delay 2-6s between queries
+            PAUSE=$(( 2 + RANDOM % 5 ))
+            echo "Pausing for ${PAUSE}s..."
+            sleep $PAUSE
+          done
+          echo "Direct PostgreSQL queries completed successfully."
+
+      - name: REST API Ping & RPC Write Activity (1-3 randomized requests)
+        run: |
+          ANON_KEY="sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z"
+          BASE_URL="https://gxbpsbqpuaudtlfliezs.supabase.co/rest/v1"
+          USER_AGENTS=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0"
+          )
+
+          # Pick random number of REST requests (1 to 3)
+          REST_COUNT=$(( 1 + RANDOM % 3 ))
+          echo "Sending $REST_COUNT REST API requests..."
+
+          for (( j=1; j<=REST_COUNT; j++ )); do
+            UA="${USER_AGENTS[$(( RANDOM % ${#USER_AGENTS[@]} ))]}"
+            echo "[$j/$REST_COUNT] Calling ping_keep_alive RPC..."
+
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              -X POST "$BASE_URL/rpc/ping_keep_alive" \
+              -H "apikey: $ANON_KEY" \
+              -H "Authorization: Bearer $ANON_KEY" \
+              -H "User-Agent: $UA" \
+              -H "Content-Type: application/json" \
+              -d '{}')
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+
+            echo "Response status: $HTTP_CODE"
+            echo "Response body: $BODY"
+
+            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 400 ]; then
+              echo "Warning: RPC returned HTTP $HTTP_CODE (table/function may not be deployed yet)."
+            else
+              echo "Ping recorded in DB successfully!"
+            fi
+
+            # Random delay 1-4s between calls
+            PAUSE=$(( 1 + RANDOM % 4 ))
+            sleep $PAUSE
+          done

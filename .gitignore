@@ -6,3 +6,4 @@ demo_data/
 .env
 .env.local
 *.log
+scratch/
