@@ -1,3 +1,5 @@
+import type { UpdateMode } from "chart.js";
+
 export interface ReadingEntry {
   date: string;
   value: number;
@@ -31,7 +33,7 @@ export interface ComparisonData {
 export interface ChartInstance {
   destroy: () => void;
   toBase64Image: () => string;
-  update?: (mode?: any) => void;
+  update?: (mode?: UpdateMode) => void;
 }
 
 export interface CategoryDataset {

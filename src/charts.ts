@@ -1,4 +1,10 @@
-import { Chart, type ChartDataset, type ChartType, type Plugin, registerables } from "chart.js";
+import {
+  Chart,
+  type ChartDataset,
+  type ChartType,
+  type Plugin,
+  registerables,
+} from "chart.js";
 import "chartjs-adapter-date-fns";
 
 declare module "chart.js" {

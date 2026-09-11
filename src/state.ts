@@ -16,14 +16,21 @@ export let supabaseClient: SupabaseClient | null = null;
 export let currentUser: User | null = null;
 export type SyncState = "offline" | "synced" | "syncing" | "error";
 export let syncState: SyncState = "offline";
+export let migrationNotice: string | null = null;
+
+export function clearMigrationNotice(): void {
+  migrationNotice = null;
+}
 
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let renderCallback: ((shouldPersist?: boolean) => void) | null = null;
-let authUpdateCallback: (() => void) | null = null;
+let renderCallback:
+  | ((shouldPersist?: boolean, targetCategoryIndex?: number) => void)
+  | null = null;
+let authUpdateCallback: ((notice?: string) => void) | null = null;
 
 export function registerCallbacks(
-  onRender: (shouldPersist?: boolean) => void,
-  onAuthUpdate: () => void,
+  onRender: (shouldPersist?: boolean, targetCategoryIndex?: number) => void,
+  onAuthUpdate: (notice?: string) => void,
 ): void {
   renderCallback = onRender;
   authUpdateCallback = onAuthUpdate;
@@ -194,7 +201,7 @@ export async function loadFromSupabase(): Promise<void> {
 
     clearCharts();
 
-    if (data && Array.isArray(data.payload)) {
+    if (data && Array.isArray(data.payload) && data.payload.length > 0) {
       datasets = data.payload.map(
         (d: {
           name: string;
@@ -209,12 +216,46 @@ export async function loadFromSupabase(): Promise<void> {
         }),
       );
     } else {
-      datasets = [];
+      // Check if user has existing guest data to migrate
+      const guestSaved =
+        localStorage.getItem(LOCAL_STORAGE_GUEST_KEY) ||
+        localStorage.getItem(LOCAL_STORAGE_LEGACY_KEY);
+      let migrated = false;
+      if (guestSaved) {
+        try {
+          const parsed = JSON.parse(guestSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            datasets = parsed.map(
+              (d: {
+                name: string;
+                entries?: ReadingEntry[];
+                collapsed?: boolean;
+              }) => ({
+                name: d.name,
+                entries: d.entries || [],
+                chart: null,
+                barCharts: {},
+                collapsed: !!d.collapsed,
+              }),
+            );
+            migrated = true;
+          }
+        } catch (parseErr) {
+          console.warn("Failed to parse guest data for migration:", parseErr);
+        }
+      }
+
+      if (migrated) {
+        migrationNotice = "Локальні покази успішно перенесено у ваш акаунт!";
+        persistState();
+      } else {
+        datasets = [];
+      }
     }
 
     renderCallback?.(false);
     syncState = "synced";
-    authUpdateCallback?.();
+    authUpdateCallback?.(migrationNotice || undefined);
   } catch (e) {
     console.error("Exception loading cloud data:", e);
     syncState = "error";
@@ -259,10 +300,7 @@ export function loadFromLocalStorage(): void {
 }
 
 // Data manipulation CRUD
-export function addCategory(
-  name: string,
-  entries: ReadingEntry[] = [],
-): void {
+export function addCategory(name: string, entries: ReadingEntry[] = []): void {
   const cleanName = name.trim();
   if (!cleanName) return;
 
@@ -294,15 +332,25 @@ export function deleteCategory(i: number): void {
 export function toggleCollapse(i: number): void {
   if (datasets[i]) {
     datasets[i].collapsed = !datasets[i].collapsed;
-    renderCallback?.();
+    renderCallback?.(true, i);
   }
+}
+
+export function sortCategoryEntries(i: number): void {
+  if (!datasets[i] || !datasets[i].entries.length) return;
+  datasets[i].entries.sort((a, b) => {
+    const da = a.date ? new Date(a.date).getTime() : 0;
+    const db = b.date ? new Date(b.date).getTime() : 0;
+    return da - db;
+  });
+  renderCallback?.(true, i);
 }
 
 export function addEntry(i: number): void {
   if (!datasets[i]) return;
   const today = new Date().toISOString().slice(0, 10);
   datasets[i].entries.push({ date: today, value: 0 });
-  renderCallback?.();
+  renderCallback?.(true, i);
 }
 
 export function updateEntry(
@@ -319,18 +367,18 @@ export function updateEntry(
     if (trimmed) {
       datasets[i].entries[j].supplier = trimmed;
     } else {
-      delete datasets[i].entries[j].supplier;
+      datasets[i].entries[j].supplier = undefined;
     }
   } else {
     datasets[i].entries[j].date = value;
   }
-  renderCallback?.();
+  renderCallback?.(true, i);
 }
 
 export function deleteEntry(i: number, j: number): void {
   if (!datasets[i]) return;
   datasets[i].entries.splice(j, 1);
-  renderCallback?.();
+  renderCallback?.(true, i);
 }
 
 export function moveEntry(i: number, j: number, dir: -1 | 1): void {
@@ -339,12 +387,12 @@ export function moveEntry(i: number, j: number, dir: -1 | 1): void {
   if (dir === -1 && j > 0) [arr[j - 1], arr[j]] = [arr[j], arr[j - 1]];
   if (dir === 1 && j < arr.length - 1)
     [arr[j + 1], arr[j]] = [arr[j], arr[j + 1]];
-  renderCallback?.();
+  renderCallback?.(true, i);
 }
 
 export function importCSVEntries(i: number, entries: ReadingEntry[]): void {
   if (!datasets[i]) return;
   datasets[i].entries = entries;
   datasets[i].collapsed = true;
-  renderCallback?.();
+  renderCallback?.(true, i);
 }

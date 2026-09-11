@@ -1,9 +1,5 @@
-import {
-  drawChart,
-  exportLineChart,
-  highlightSupplierPeriod,
-} from "./charts";
 import { getEffectiveEntries, getSupplierSummaries } from "./calculations";
+import { drawChart, exportLineChart, highlightSupplierPeriod } from "./charts";
 import {
   addCategory,
   addEntry,
@@ -17,13 +13,14 @@ import {
   manualReSync,
   moveEntry,
   persistState,
+  sortCategoryEntries,
   syncState,
   toggleCollapse,
   updateEntry,
 } from "./state";
 import type { ReadingEntry } from "./types";
 
-export function renderAuthUI(): void {
+export function renderAuthUI(notice?: string): void {
   const badge = document.getElementById("authBadge");
   const label = document.getElementById("userLabel");
   const btn = document.getElementById("authBtn");
@@ -31,6 +28,21 @@ export function renderAuthUI(): void {
   const syncText = document.getElementById("syncStatusText");
 
   if (!badge || !btn || !label) return;
+
+  if (notice) {
+    let toast = document.getElementById("authToast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "authToast";
+      toast.className = "auth-toast-banner";
+      document.querySelector(".container")?.prepend(toast);
+    }
+    toast.textContent = notice;
+    toast.style.display = "block";
+    setTimeout(() => {
+      if (toast) toast.style.display = "none";
+    }, 6000);
+  }
 
   if (syncBtn && syncText) {
     const syncIcon = syncBtn.querySelector(".sync-icon");
@@ -252,278 +264,342 @@ export function renderStatsChips(i: number): string {
   return chipsHTML;
 }
 
-export function renderDatasets(shouldPersist = true): void {
-  const host = document.getElementById("datasets");
-  if (!host) return;
+export function createCategoryCard(
+  i: number,
+  ds: (typeof datasets)[0],
+): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "dataset-card";
+  card.id = `dataset-card-${i}`;
 
-  const currentScrollY = window.scrollY;
-  host.innerHTML = "";
+  const hasData = ds.entries.length > 0;
+  const statsChips = renderStatsChips(i);
+  const effectiveEntries = getEffectiveEntries(ds.entries);
+  const supplierSummaries = getSupplierSummaries(ds.entries);
 
-  for (const [i, ds] of datasets.entries()) {
-    const card = document.createElement("div");
-    card.className = "dataset-card";
+  const sortedChronological = [...ds.entries]
+    .filter((entry) => entry.date && Number.isFinite(Number(entry.value)))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const hasData = ds.entries.length > 0;
-    const statsChips = renderStatsChips(i);
-    const effectiveEntries = getEffectiveEntries(ds.entries);
-    const supplierSummaries = getSupplierSummaries(ds.entries);
+  let supplierPillsHTML = "";
+  if (hasData && supplierSummaries.length > 0) {
+    supplierPillsHTML = `
+      <div class="supplier-pills-bar">
+        <span class="supplier-pills-label">Suppliers:</span>
+        ${supplierSummaries
+          .map(
+            (s) => `
+          <div class="supplier-pill" data-i="${i}" data-supplier="${s.supplier}" style="--pill-color: ${s.color};">
+            <span class="supplier-pill-dot" style="background-color: ${s.color};"></span>
+            <span class="supplier-pill-name">${s.supplier}</span>
+            <span class="supplier-pill-stats">(${Math.round(s.totalConsumption)} units)</span>
+          </div>
+        `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
 
-    let supplierPillsHTML = "";
-    if (hasData && supplierSummaries.length > 0) {
-      supplierPillsHTML = `
-        <div class="supplier-pills-bar">
-          <span class="supplier-pills-label">Suppliers:</span>
-          ${supplierSummaries
-            .map(
-              (s) => `
-            <div class="supplier-pill" data-i="${i}" data-supplier="${s.supplier}" style="--pill-color: ${s.color};">
-              <span class="supplier-pill-dot" style="background-color: ${s.color};"></span>
-              <span class="supplier-pill-name">${s.supplier}</span>
-              <span class="supplier-pill-stats">(${Math.round(s.totalConsumption)} units)</span>
-            </div>
-          `,
-            )
-            .join("")}
-        </div>
-      `;
+  let tableRowsHTML = "";
+  for (let j = 0; j < ds.entries.length; j++) {
+    const e = ds.entries[j];
+    const eff = effectiveEntries[j];
+    const prevEff = j > 0 ? effectiveEntries[j - 1] : null;
+
+    const isInitial = j === 0 && eff && eff.effectiveSupplier;
+    const isTransition =
+      j > 0 &&
+      prevEff &&
+      eff &&
+      eff.effectiveSupplier !== prevEff.effectiveSupplier;
+
+    let isAnomaly = false;
+    let anomalyDiff = 0;
+    let prevReadingRef = "";
+
+    if (e.date && Number.isFinite(Number(e.value))) {
+      const eTime = new Date(e.date).getTime();
+      const eVal = Number(e.value);
+      let pred: ReadingEntry | null = null;
+      for (const item of sortedChronological) {
+        const itemTime = new Date(item.date).getTime();
+        if (itemTime < eTime) {
+          pred = item;
+        } else {
+          break;
+        }
+      }
+      if (pred && eVal < Number(pred.value)) {
+        isAnomaly = true;
+        anomalyDiff = Math.round((Number(pred.value) - eVal) * 100) / 100;
+        prevReadingRef = `${pred.date} (${pred.value})`;
+      }
     }
 
-    let tableRowsHTML = "";
-    for (let j = 0; j < ds.entries.length; j++) {
-      const e = ds.entries[j];
-      const eff = effectiveEntries[j];
-      const prevEff = j > 0 ? effectiveEntries[j - 1] : null;
-
-      const isInitial = j === 0 && eff && eff.effectiveSupplier;
-      const isTransition =
-        j > 0 &&
-        prevEff &&
-        eff &&
-        eff.effectiveSupplier !== prevEff.effectiveSupplier;
-
-      if (isInitial) {
-        tableRowsHTML += `
-          <tr class="supplier-transition-row">
-            <td colspan="5">
-              <div class="supplier-transition-badge">
-                🏁 Initial Supplier: <strong>${eff.effectiveSupplier}</strong>
-              </div>
-            </td>
-          </tr>
-        `;
-      } else if (isTransition) {
-        tableRowsHTML += `
-          <tr class="supplier-transition-row">
-            <td colspan="5">
-              <div class="supplier-transition-badge">
-                🔄 Supplier Transition: <strong>${eff.effectiveSupplier}</strong>
-              </div>
-            </td>
-          </tr>
-        `;
-      }
-
+    if (isInitial) {
       tableRowsHTML += `
-        <tr>
-          <td class="row-index">${j + 1}</td>
-          <td>
-            <input type="date" class="input-table-date" value="${e.date || ""}" data-i="${i}" data-j="${j}" data-field="date" />
+        <tr class="supplier-transition-row">
+          <td colspan="5">
+            <div class="supplier-transition-badge">
+              🏁 Initial Supplier: <strong>${eff.effectiveSupplier}</strong>
+            </div>
           </td>
-          <td>
-            <input type="number" step="any" class="input-table-number" value="${Number.isNaN(e.value) ? "" : e.value}" data-i="${i}" data-j="${j}" data-field="value" placeholder="0" />
-          </td>
-          <td>
-            <input type="text" class="input-table-text input-supplier-field" value="${e.supplier || ""}" placeholder="(${eff?.effectiveSupplier || "Inherited"})" data-i="${i}" data-j="${j}" data-field="supplier" title="Supplier name (leave blank to inherit from previous row)" />
-          </td>
-          <td class="controls-cell">
-            <button class="btn-row-action btn-move-up" data-i="${i}" data-j="${j}" title="Move Up">↑</button>
-            <button class="btn-row-action btn-move-down" data-i="${i}" data-j="${j}" title="Move Down">↓</button>
-            <button class="btn-row-action btn-delete" data-i="${i}" data-j="${j}" title="Delete Row">🗑️</button>
+        </tr>
+      `;
+    } else if (isTransition) {
+      tableRowsHTML += `
+        <tr class="supplier-transition-row">
+          <td colspan="5">
+            <div class="supplier-transition-badge">
+              🔄 Supplier Transition: <strong>${eff.effectiveSupplier}</strong>
+            </div>
           </td>
         </tr>
       `;
     }
 
-    card.innerHTML = `
-      <div class="header-controls">
-        <div class="category-header-title">
-          <h2>${ds.name}</h2>
-          <span class="entries-count-badge">${ds.entries.length} readings</span>
-        </div>
-        <div class="header-action-group">
-          ${
-            hasData
-              ? `<button class="btn-action btn-export" id="export-csv-hdr-${i}">
-                  📥 Export CSV
-                </button>`
-              : ""
-          }
-          <label class="btn-action btn-import">
-            📤 Import CSV
-            <input type="file" accept=".csv" class="input-csv-file-hdr" data-i="${i}" style="display:none" />
-          </label>
-          <button class="btn-action btn-toggle" id="toggle-card-${i}">
-            ${ds.collapsed ? "📋 Edit Table" : "📊 Hide Table"}
-          </button>
-          <button class="btn-action btn-delete-cat" id="delete-cat-${i}" title="Delete Category">
-            🗑️
-          </button>
-        </div>
+    tableRowsHTML += `
+      <tr class="${isAnomaly ? "tr-anomaly" : ""}">
+        <td class="row-index">${j + 1}</td>
+        <td>
+          <input type="date" class="input-table-date" value="${e.date || ""}" data-i="${i}" data-j="${j}" data-field="date" />
+        </td>
+        <td>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <input type="number" step="any" class="input-table-number ${isAnomaly ? "input-anomaly" : ""}" value="${Number.isNaN(e.value) ? "" : e.value}" data-i="${i}" data-j="${j}" data-field="value" placeholder="0" />
+            ${isAnomaly ? `<span class="anomaly-badge" title="Показ менший за попередній на ${anomalyDiff} (було ${prevReadingRef}). Можлива помилка введення.">⚠️ -${anomalyDiff}</span>` : ""}
+          </div>
+        </td>
+        <td>
+          <input type="text" class="input-table-text input-supplier-field" value="${e.supplier || ""}" placeholder="(${eff?.effectiveSupplier || "Inherited"})" data-i="${i}" data-j="${j}" data-field="supplier" title="Supplier name (leave blank to inherit from previous row)" />
+        </td>
+        <td class="controls-cell">
+          <button class="btn-row-action btn-move-up" data-i="${i}" data-j="${j}" title="Move Up">↑</button>
+          <button class="btn-row-action btn-move-down" data-i="${i}" data-j="${j}" title="Move Down">↓</button>
+          <button class="btn-row-action btn-delete" data-i="${i}" data-j="${j}" title="Delete Row">🗑️</button>
+        </td>
+      </tr>
+    `;
+  }
+
+  card.innerHTML = `
+    <div class="header-controls">
+      <div class="category-header-title">
+        <h2>${ds.name}</h2>
+        <span class="entries-count-badge">${ds.entries.length} readings</span>
       </div>
-
-      ${statsChips}
-
-      <div class="card-collapsible-content" style="display:${ds.collapsed ? "none" : "block"};">
-        <div class="table-responsive">
-          <table class="readings-table">
-            <thead>
-              <tr>
-                <th style="width: 50px;">#</th>
-                <th>Date</th>
-                <th>Meter Reading Value</th>
-                <th>Supplier</th>
-                <th style="width: 130px; text-align: center;">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${tableRowsHTML}
-            </tbody>
-          </table>
-        </div>
-
-        <button class="btn-add-row" id="add-row-${i}" title="Add new meter reading">+ Add Reading Entry</button>
-
-        <div class="action-buttons-bar">
-          <button class="btn-action btn-export" id="export-csv-${i}">
-            📥 Export CSV
-          </button>
-          <label class="btn-action btn-import">
-            📤 Import CSV
-            <input type="file" accept=".csv" class="input-csv-file" data-i="${i}" style="display:none" />
-          </label>
-          <button class="btn-action btn-close-table" id="close-table-${i}">
-            🔼 Collapse Table
-          </button>
-        </div>
-      </div>
-
-      <div class="chart-section">
+      <div class="header-action-group">
         ${
           hasData
-            ? `<div class="chart-header-bar">
-                <span class="chart-section-title">Relative Consumption Trend</span>
-                <button class="btn-export-chart-small" id="export-line-${i}" title="Save Line Chart as PNG image">
-                  📷 Save PNG
-                </button>
-              </div>`
+            ? `<button class="btn-action btn-export" id="export-csv-hdr-${i}">
+                📥 Export CSV
+              </button>`
             : ""
         }
-        ${supplierPillsHTML}
-        <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
-        <div id="bar-container-${i}" class="bar-charts-container"></div>
+        <label class="btn-action btn-import">
+          📤 Import CSV
+          <input type="file" accept=".csv" class="input-csv-file-hdr" data-i="${i}" style="display:none" />
+        </label>
+        <button class="btn-action btn-toggle" id="toggle-card-${i}">
+          ${ds.collapsed ? "📋 Edit Table" : "📊 Hide Table"}
+        </button>
+        <button class="btn-action btn-delete-cat" id="delete-cat-${i}" title="Delete Category">
+          🗑️
+        </button>
       </div>
-    `;
+    </div>
 
-    host.appendChild(card);
+    ${statsChips}
 
-    const toggleBtn = card.querySelector(`#toggle-card-${i}`);
-    if (toggleBtn) toggleBtn.addEventListener("click", () => toggleCollapse(i));
+    <div class="card-collapsible-content" style="display:${ds.collapsed ? "none" : "block"};">
+      <div class="table-responsive">
+        <table class="readings-table">
+          <thead>
+            <tr>
+              <th style="width: 50px;">#</th>
+              <th>Date</th>
+              <th>Meter Reading Value</th>
+              <th>Supplier</th>
+              <th style="width: 130px; text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRowsHTML}
+          </tbody>
+        </table>
+      </div>
 
-    const closeTableBtn = card.querySelector(`#close-table-${i}`);
-    if (closeTableBtn)
-      closeTableBtn.addEventListener("click", () => toggleCollapse(i));
+      <div class="table-actions-row">
+        <button class="btn-add-row" id="add-row-${i}" title="Add new meter reading">+ Add Reading Entry</button>
+        <button class="btn-action btn-sort" id="sort-date-${i}" title="Sort readings chronologically by date">📅 Sort by Date</button>
+      </div>
 
-    const deleteCatBtn = card.querySelector(`#delete-cat-${i}`);
-    if (deleteCatBtn)
-      deleteCatBtn.addEventListener("click", () => deleteCategory(i));
+      <div class="action-buttons-bar">
+        <button class="btn-action btn-export" id="export-csv-${i}">
+          📥 Export CSV
+        </button>
+        <label class="btn-action btn-import">
+          📤 Import CSV
+          <input type="file" accept=".csv" class="input-csv-file" data-i="${i}" style="display:none" />
+        </label>
+        <button class="btn-action btn-close-table" id="close-table-${i}">
+          🔼 Collapse Table
+        </button>
+      </div>
+    </div>
 
-    const exportLineBtn = card.querySelector(`#export-line-${i}`);
-    if (exportLineBtn)
-      exportLineBtn.addEventListener("click", () => exportLineChart(i));
+    <div class="chart-section">
+      ${
+        hasData
+          ? `<div class="chart-header-bar">
+              <span class="chart-section-title">Relative Consumption Trend</span>
+              <button class="btn-export-chart-small" id="export-line-${i}" title="Save Line Chart as PNG image">
+                📷 Save PNG
+              </button>
+            </div>`
+          : ""
+      }
+      ${supplierPillsHTML}
+      <div class="chart-wrap"><canvas id="chart-${i}"></canvas></div>
+      <div id="bar-container-${i}" class="bar-charts-container"></div>
+    </div>
+  `;
 
-    const addRowBtn = card.querySelector(`#add-row-${i}`);
-    if (addRowBtn) addRowBtn.addEventListener("click", () => addEntry(i));
+  const toggleBtn = card.querySelector(`#toggle-card-${i}`);
+  if (toggleBtn) toggleBtn.addEventListener("click", () => toggleCollapse(i));
 
-    const exportCsvBtn = card.querySelector(`#export-csv-${i}`);
-    if (exportCsvBtn)
-      exportCsvBtn.addEventListener("click", () => exportCSV(i));
+  const closeTableBtn = card.querySelector(`#close-table-${i}`);
+  if (closeTableBtn)
+    closeTableBtn.addEventListener("click", () => toggleCollapse(i));
 
-    const exportCsvHdrBtn = card.querySelector(`#export-csv-hdr-${i}`);
-    if (exportCsvHdrBtn)
-      exportCsvHdrBtn.addEventListener("click", () => exportCSV(i));
+  const deleteCatBtn = card.querySelector(`#delete-cat-${i}`);
+  if (deleteCatBtn)
+    deleteCatBtn.addEventListener("click", () => deleteCategory(i));
 
-    const importCsvInputs = card.querySelectorAll<HTMLInputElement>(
-      `.input-csv-file[data-i="${i}"], .input-csv-file-hdr[data-i="${i}"]`,
-    );
-    for (const inputEl of importCsvInputs) {
-      inputEl.addEventListener("change", (e) => importCSV(e, i));
-    }
+  const exportLineBtn = card.querySelector(`#export-line-${i}`);
+  if (exportLineBtn)
+    exportLineBtn.addEventListener("click", () => exportLineChart(i));
 
-    const inputElements =
-      card.querySelectorAll<HTMLInputElement>("input[data-field]");
-    for (const inputEl of inputElements) {
-      inputEl.addEventListener("change", (e) => {
-        const target = e.target as HTMLInputElement;
+  const addRowBtn = card.querySelector(`#add-row-${i}`);
+  if (addRowBtn) addRowBtn.addEventListener("click", () => addEntry(i));
+
+  const sortDateBtn = card.querySelector(`#sort-date-${i}`);
+  if (sortDateBtn)
+    sortDateBtn.addEventListener("click", () => sortCategoryEntries(i));
+
+  const exportCsvBtn = card.querySelector(`#export-csv-${i}`);
+  if (exportCsvBtn) exportCsvBtn.addEventListener("click", () => exportCSV(i));
+
+  const exportCsvHdrBtn = card.querySelector(`#export-csv-hdr-${i}`);
+  if (exportCsvHdrBtn)
+    exportCsvHdrBtn.addEventListener("click", () => exportCSV(i));
+
+  const importCsvInputs = card.querySelectorAll<HTMLInputElement>(
+    `.input-csv-file[data-i="${i}"], .input-csv-file-hdr[data-i="${i}"]`,
+  );
+  for (const inputEl of importCsvInputs) {
+    inputEl.addEventListener("change", (e) => importCSV(e, i));
+  }
+
+  const inputElements =
+    card.querySelectorAll<HTMLInputElement>("input[data-field]");
+  for (const inputEl of inputElements) {
+    inputEl.addEventListener("change", (e) => {
+      const target = e.target as HTMLInputElement;
+      const indexI = Number(target.dataset.i);
+      const indexJ = Number(target.dataset.j);
+      const field = target.dataset.field as "date" | "value" | "supplier";
+      updateEntry(indexI, indexJ, field, target.value);
+    });
+  }
+
+  const supplierPillEls = card.querySelectorAll<HTMLElement>(".supplier-pill");
+  for (const pillEl of supplierPillEls) {
+    pillEl.addEventListener("mouseenter", () => {
+      const indexI = Number(pillEl.dataset.i);
+      const supName = pillEl.dataset.supplier || null;
+      highlightSupplierPeriod(indexI, supName);
+    });
+    pillEl.addEventListener("mouseleave", () => {
+      const indexI = Number(pillEl.dataset.i);
+      highlightSupplierPeriod(indexI, null);
+    });
+  }
+
+  const moveUpButtons =
+    card.querySelectorAll<HTMLButtonElement>(".btn-move-up");
+  for (const btnEl of moveUpButtons) {
+    btnEl.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest("button");
+      if (target) {
         const indexI = Number(target.dataset.i);
         const indexJ = Number(target.dataset.j);
-        const field = target.dataset.field as "date" | "value" | "supplier";
-        updateEntry(indexI, indexJ, field, target.value);
-      });
-    }
+        moveEntry(indexI, indexJ, -1);
+      }
+    });
+  }
 
-    const supplierPillEls =
-      card.querySelectorAll<HTMLElement>(".supplier-pill");
-    for (const pillEl of supplierPillEls) {
-      pillEl.addEventListener("mouseenter", () => {
-        const indexI = Number(pillEl.dataset.i);
-        const supName = pillEl.dataset.supplier || null;
-        highlightSupplierPeriod(indexI, supName);
-      });
-      pillEl.addEventListener("mouseleave", () => {
-        const indexI = Number(pillEl.dataset.i);
-        highlightSupplierPeriod(indexI, null);
-      });
-    }
+  const moveDownButtons =
+    card.querySelectorAll<HTMLButtonElement>(".btn-move-down");
+  for (const btnEl of moveDownButtons) {
+    btnEl.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest("button");
+      if (target) {
+        const indexI = Number(target.dataset.i);
+        const indexJ = Number(target.dataset.j);
+        moveEntry(indexI, indexJ, 1);
+      }
+    });
+  }
 
-    const moveUpButtons =
-      card.querySelectorAll<HTMLButtonElement>(".btn-move-up");
-    for (const btnEl of moveUpButtons) {
-      btnEl.addEventListener("click", (e) => {
-        const target = (e.target as HTMLElement).closest("button");
-        if (target) {
-          const indexI = Number(target.dataset.i);
-          const indexJ = Number(target.dataset.j);
-          moveEntry(indexI, indexJ, -1);
-        }
-      });
-    }
+  const deleteButtons = card.querySelectorAll<HTMLButtonElement>(".btn-delete");
+  for (const btnEl of deleteButtons) {
+    btnEl.addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest("button");
+      if (target) {
+        const indexI = Number(target.dataset.i);
+        const indexJ = Number(target.dataset.j);
+        deleteEntry(indexI, indexJ);
+      }
+    });
+  }
 
-    const moveDownButtons =
-      card.querySelectorAll<HTMLButtonElement>(".btn-move-down");
-    for (const btnEl of moveDownButtons) {
-      btnEl.addEventListener("click", (e) => {
-        const target = (e.target as HTMLElement).closest("button");
-        if (target) {
-          const indexI = Number(target.dataset.i);
-          const indexJ = Number(target.dataset.j);
-          moveEntry(indexI, indexJ, 1);
-        }
-      });
-    }
+  return card;
+}
 
-    const deleteButtons =
-      card.querySelectorAll<HTMLButtonElement>(".btn-delete");
-    for (const btnEl of deleteButtons) {
-      btnEl.addEventListener("click", (e) => {
-        const target = (e.target as HTMLElement).closest("button");
-        if (target) {
-          const indexI = Number(target.dataset.i);
-          const indexJ = Number(target.dataset.j);
-          deleteEntry(indexI, indexJ);
-        }
-      });
-    }
+export function renderDatasets(
+  shouldPersist = true,
+  targetCategoryIndex?: number,
+): void {
+  const host = document.getElementById("datasets");
+  if (!host) return;
 
+  if (targetCategoryIndex !== undefined && datasets[targetCategoryIndex]) {
+    const existingCard = document.getElementById(
+      `dataset-card-${targetCategoryIndex}`,
+    );
+    if (existingCard) {
+      const newCard = createCategoryCard(
+        targetCategoryIndex,
+        datasets[targetCategoryIndex],
+      );
+      existingCard.replaceWith(newCard);
+      drawChart(targetCategoryIndex);
+
+      if (shouldPersist) {
+        persistState();
+      }
+      return;
+    }
+  }
+
+  const currentScrollY = window.scrollY;
+  host.innerHTML = "";
+
+  for (const [i, ds] of datasets.entries()) {
+    const card = createCategoryCard(i, ds);
+    host.appendChild(card);
     drawChart(i);
   }
 

@@ -6,8 +6,9 @@ import { renderAuthUI, renderDatasets, setupDOMEvents } from "./ui";
 document.addEventListener("DOMContentLoaded", () => {
   // Register state update callbacks
   registerCallbacks(
-    (shouldPersist?: boolean) => renderDatasets(shouldPersist),
-    () => renderAuthUI(),
+    (shouldPersist?: boolean, targetCategoryIndex?: number) =>
+      renderDatasets(shouldPersist, targetCategoryIndex),
+    (notice?: string) => renderAuthUI(notice),
   );
 
   // Bind top level DOM listeners (add category)

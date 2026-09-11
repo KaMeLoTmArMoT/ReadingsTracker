@@ -267,7 +267,7 @@ export function getEffectiveEntries(
 
   let currentSupplier = "";
   for (const e of sorted) {
-    if (e.supplier && e.supplier.trim()) {
+    if (e.supplier?.trim()) {
       currentSupplier = e.supplier.trim();
       break;
     }
@@ -275,7 +275,7 @@ export function getEffectiveEntries(
 
   const result: EffectiveReadingEntry[] = [];
   for (const entry of sorted) {
-    if (entry.supplier && entry.supplier.trim()) {
+    if (entry.supplier?.trim()) {
       currentSupplier = entry.supplier.trim();
     }
     result.push({
@@ -309,9 +309,7 @@ export function getSupplierSummaries(
   let currentBlock: EffectiveReadingEntry[] = [effective[0]];
 
   for (let k = 1; k < effective.length; k++) {
-    if (
-      effective[k].effectiveSupplier === effective[k - 1].effectiveSupplier
-    ) {
+    if (effective[k].effectiveSupplier === effective[k - 1].effectiveSupplier) {
       currentBlock.push(effective[k]);
     } else {
       const start = currentBlock[0];
