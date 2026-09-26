@@ -7,8 +7,14 @@ import {
 } from "chart.js";
 import "chartjs-adapter-date-fns";
 
+export interface DeltaArrowsOptions {
+  year?: string;
+  monthTotals?: Record<string, number>;
+}
+
 declare module "chart.js" {
   interface PluginOptionsByType<TType extends ChartType> {
+    deltaArrows?: DeltaArrowsOptions;
     supplierLineTransitions?: {
       periods?: SupplierPeriodSummary[];
       highlightedSupplier?: string | null;
@@ -56,14 +62,46 @@ const yearColors = [
   "#a855f7",
 ];
 
+const DELTA_MUTED_COLOR = "#64748b";
+const DELTA_UP_COLOR = "#f87171";
+const DELTA_DOWN_COLOR = "#4ade80";
+
+function resolveMonthValue(
+  monthIndex: number,
+  yearStr: string | undefined,
+  monthTotals: Record<string, number> | undefined,
+  fallbackData: (number | null)[],
+): { hasData: boolean; value: number } {
+  let targetYear = yearStr;
+  let targetMonth = monthIndex + 1;
+
+  if (monthIndex < 0) {
+    if (!yearStr) return { hasData: false, value: 0 };
+    const prevYearNum = Number.parseInt(yearStr, 10) - 1;
+    if (!Number.isFinite(prevYearNum)) return { hasData: false, value: 0 };
+    targetYear = String(prevYearNum);
+    targetMonth = 12;
+  }
+
+  const mm = String(targetMonth).padStart(2, "0");
+  const key = targetYear ? `${targetYear}-${mm}` : null;
+
+  if (key && monthTotals) {
+    const hasData = key in monthTotals;
+    return { hasData, value: hasData ? monthTotals[key] : 0 };
+  }
+
+  const raw = fallbackData[monthIndex];
+  const hasData = Number.isFinite(raw) && (raw as number) > 0;
+  return { hasData, value: hasData ? Number(raw) : 0 };
+}
+
 export const deltaArrowsPlugin: Plugin<"bar"> = {
   id: "deltaArrows",
-  afterDatasetsDraw(chart) {
+  afterDatasetsDraw(chart, _args, options?: DeltaArrowsOptions) {
     const { ctx } = chart;
 
-    const dsIndex = chart.data.datasets.length - 1;
-    const meta = chart.getDatasetMeta(dsIndex);
-    const data = (chart.data.datasets[dsIndex]?.data as number[]) || [];
+    const meta = chart.getDatasetMeta(0);
     if (!meta || !meta.data?.length) return;
 
     const xScale = chart.scales[meta.xAxisID || "x"];
@@ -71,25 +109,59 @@ export const deltaArrowsPlugin: Plugin<"bar"> = {
 
     const baseY = xScale.bottom + 4;
 
+    const opts =
+      options ??
+      ((chart.options.plugins as Record<string, unknown> | undefined)
+        ?.deltaArrows as DeltaArrowsOptions | undefined);
+    const year = opts?.year;
+    const monthTotals = opts?.monthTotals;
+
+    const consumptionDs =
+      chart.data.datasets.find((ds) => ds.label?.startsWith("Consumption")) ||
+      chart.data.datasets[0];
+    const data = (consumptionDs?.data as (number | null)[]) || [];
+
+    const forecastDs = chart.data.datasets.find((ds) =>
+      ds.label?.startsWith("Forecast"),
+    );
+    const forecastData = (forecastDs?.data as (number | null)[]) || [];
+
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.font = "500 11px Inter, sans-serif";
 
-    for (let i = 1; i < data.length; i++) {
-      const curr = Number(data[i]);
-      const prev = Number(data[i - 1]);
+    for (let i = 0; i < meta.data.length; i++) {
       const el = meta.data[i];
       if (!el) continue;
 
-      let label = "—";
-      let color = "#64748b";
+      const curr = resolveMonthValue(i, year, monthTotals, data);
+      if (!curr.hasData) {
+        ctx.fillStyle = DELTA_MUTED_COLOR;
+        ctx.fillText("—", el.x, baseY);
+        continue;
+      }
 
-      if (Number.isFinite(curr) && Number.isFinite(prev) && prev !== 0) {
-        const pct = ((curr - prev) / prev) * 100;
+      const forecastDelta = Number(forecastData[i]);
+      if (Number.isFinite(forecastDelta) && forecastDelta > 0) {
+        curr.value += forecastDelta;
+      }
+
+      const prev = resolveMonthValue(i - 1, year, monthTotals, data);
+
+      let label = "—";
+      let color = DELTA_MUTED_COLOR;
+
+      if (
+        prev.hasData &&
+        Number.isFinite(prev.value) &&
+        prev.value > 0 &&
+        Number.isFinite(curr.value)
+      ) {
+        const pct = ((curr.value - prev.value) / prev.value) * 100;
         const up = pct >= 0;
         const arrow = up ? "↑" : "↓";
-        color = up ? "#f87171" : "#4ade80";
+        color = up ? DELTA_UP_COLOR : DELTA_DOWN_COLOR;
         label = `${arrow} ${pct >= 0 ? "+" : ""}${Math.round(pct)}%`;
       }
 
@@ -832,6 +904,10 @@ export function drawBarChart(
           },
         },
         plugins: {
+          deltaArrows: {
+            year,
+            monthTotals,
+          },
           supplierBarTransitions: {
             periods: getSupplierSummaries(datasets[i].entries),
             year,
