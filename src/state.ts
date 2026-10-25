@@ -175,6 +175,23 @@ function clearCharts(): void {
   datasets = [];
 }
 
+interface RawDataset {
+  name: string;
+  entries?: ReadingEntry[];
+  collapsed?: boolean;
+}
+
+function normalizeDatasets(raw: unknown): CategoryDataset[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as RawDataset[]).map((d) => ({
+    name: d.name,
+    entries: d.entries || [],
+    chart: null,
+    barCharts: {},
+    collapsed: !!d.collapsed,
+  }));
+}
+
 export async function loadFromSupabase(): Promise<void> {
   if (!supabaseClient || !currentUser) {
     syncState = "offline";
@@ -201,20 +218,9 @@ export async function loadFromSupabase(): Promise<void> {
 
     clearCharts();
 
-    if (data && Array.isArray(data.payload) && data.payload.length > 0) {
-      datasets = data.payload.map(
-        (d: {
-          name: string;
-          entries?: ReadingEntry[];
-          collapsed?: boolean;
-        }) => ({
-          name: d.name,
-          entries: d.entries || [],
-          chart: null,
-          barCharts: {},
-          collapsed: !!d.collapsed,
-        }),
-      );
+    const cloudDatasets = normalizeDatasets(data?.payload);
+    if (cloudDatasets.length > 0) {
+      datasets = cloudDatasets;
     } else {
       // Check if user has existing guest data to migrate
       const guestSaved =
@@ -224,20 +230,9 @@ export async function loadFromSupabase(): Promise<void> {
       if (guestSaved) {
         try {
           const parsed = JSON.parse(guestSaved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            datasets = parsed.map(
-              (d: {
-                name: string;
-                entries?: ReadingEntry[];
-                collapsed?: boolean;
-              }) => ({
-                name: d.name,
-                entries: d.entries || [],
-                chart: null,
-                barCharts: {},
-                collapsed: !!d.collapsed,
-              }),
-            );
+          const migratedDatasets = normalizeDatasets(parsed);
+          if (migratedDatasets.length > 0) {
+            datasets = migratedDatasets;
             migrated = true;
           }
         } catch (parseErr) {
@@ -276,22 +271,7 @@ export function loadFromLocalStorage(): void {
     localStorage.getItem(LOCAL_STORAGE_LEGACY_KEY);
   if (saved) {
     try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        datasets = parsed.map(
-          (d: {
-            name: string;
-            entries?: ReadingEntry[];
-            collapsed?: boolean;
-          }) => ({
-            name: d.name,
-            entries: d.entries || [],
-            chart: null,
-            barCharts: {},
-            collapsed: !!d.collapsed,
-          }),
-        );
-      }
+      datasets = normalizeDatasets(JSON.parse(saved));
     } catch (e) {
       console.error("Error parsing local state:", e);
     }

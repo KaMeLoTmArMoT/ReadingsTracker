@@ -1,4 +1,8 @@
-import { getEffectiveEntries, getSupplierSummaries } from "./calculations";
+import {
+  getEffectiveEntries,
+  getSupplierSummaries,
+  groupEntriesByYear,
+} from "./calculations";
 import { drawChart, exportLineChart, highlightSupplierPeriod } from "./charts";
 import {
   addCategory,
@@ -190,13 +194,7 @@ export function renderStatsChips(i: number): string {
 
   if (!sorted.length) return "";
 
-  const yearGroups: Record<string, ReadingEntry[]> = {};
-  for (const e of sorted) {
-    const year = String(e.date).slice(0, 4);
-    if (!yearGroups[year]) yearGroups[year] = [];
-    yearGroups[year].push(e);
-  }
-
+  const yearGroups = groupEntriesByYear(sorted);
   const years = Object.keys(yearGroups).sort();
   const yearBaselines: Record<string, number> = {};
 
@@ -527,43 +525,23 @@ export function createCategoryCard(
     });
   }
 
-  const moveUpButtons =
-    card.querySelectorAll<HTMLButtonElement>(".btn-move-up");
-  for (const btnEl of moveUpButtons) {
-    btnEl.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest("button");
-      if (target) {
-        const indexI = Number(target.dataset.i);
-        const indexJ = Number(target.dataset.j);
-        moveEntry(indexI, indexJ, -1);
-      }
-    });
-  }
+  const bindRowAction = (
+    selector: string,
+    action: (i: number, j: number) => void,
+  ) => {
+    for (const btnEl of card.querySelectorAll<HTMLButtonElement>(selector)) {
+      btnEl.addEventListener("click", (e) => {
+        const target = (e.target as HTMLElement).closest("button");
+        if (target) {
+          action(Number(target.dataset.i), Number(target.dataset.j));
+        }
+      });
+    }
+  };
 
-  const moveDownButtons =
-    card.querySelectorAll<HTMLButtonElement>(".btn-move-down");
-  for (const btnEl of moveDownButtons) {
-    btnEl.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest("button");
-      if (target) {
-        const indexI = Number(target.dataset.i);
-        const indexJ = Number(target.dataset.j);
-        moveEntry(indexI, indexJ, 1);
-      }
-    });
-  }
-
-  const deleteButtons = card.querySelectorAll<HTMLButtonElement>(".btn-delete");
-  for (const btnEl of deleteButtons) {
-    btnEl.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest("button");
-      if (target) {
-        const indexI = Number(target.dataset.i);
-        const indexJ = Number(target.dataset.j);
-        deleteEntry(indexI, indexJ);
-      }
-    });
-  }
+  bindRowAction(".btn-move-up", (i, j) => moveEntry(i, j, -1));
+  bindRowAction(".btn-move-down", (i, j) => moveEntry(i, j, 1));
+  bindRowAction(".btn-delete", (i, j) => deleteEntry(i, j));
 
   return card;
 }

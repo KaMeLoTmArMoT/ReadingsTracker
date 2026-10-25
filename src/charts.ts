@@ -33,6 +33,7 @@ import {
   findDateAtLevel,
   getActiveMonthForecast,
   getSupplierSummaries,
+  groupEntriesByYear,
   mmddFromRefDate,
   toUTCDate,
 } from "./calculations";
@@ -487,14 +488,7 @@ export function drawChart(i: number): void {
   if (!sorted.length) return;
 
   const forecast = getActiveMonthForecast(sorted);
-
-  const yearGroups: Record<string, ReadingEntry[]> = {};
-  for (const e of sorted) {
-    const year = String(e.date).slice(0, 4);
-    if (!yearGroups[year]) yearGroups[year] = [];
-    yearGroups[year].push(e);
-  }
-
+  const yearGroups = groupEntriesByYear(sorted);
   const years = Object.keys(yearGroups).sort();
 
   addSyntheticDec31ForClosedYears(yearGroups, years);

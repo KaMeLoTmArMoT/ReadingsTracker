@@ -27,6 +27,18 @@ export function daysBetweenUTC(a: Date, b: Date): number {
   return (b.getTime() - a.getTime()) / 86400000;
 }
 
+export function groupEntriesByYear(
+  entries: ReadingEntry[],
+): Record<string, ReadingEntry[]> {
+  const yearGroups: Record<string, ReadingEntry[]> = {};
+  for (const e of entries) {
+    const year = String(e.date).slice(0, 4);
+    if (!yearGroups[year]) yearGroups[year] = [];
+    yearGroups[year].push(e);
+  }
+  return yearGroups;
+}
+
 export function allocateByMonth(
   startUTC: Date,
   endUTC: Date,
@@ -308,43 +320,32 @@ export function getSupplierSummaries(
 
   let currentBlock: EffectiveReadingEntry[] = [effective[0]];
 
-  for (let k = 1; k < effective.length; k++) {
-    if (effective[k].effectiveSupplier === effective[k - 1].effectiveSupplier) {
-      currentBlock.push(effective[k]);
-    } else {
-      const start = currentBlock[0];
-      const end = currentBlock[currentBlock.length - 1];
-      const sup = start.effectiveSupplier;
-      const totalConsumption = Math.max(0, end.value - start.value);
-      periods.push({
-        supplier: sup,
-        startDate: start.date,
-        endDate: end.date,
-        startValue: start.value,
-        endValue: end.value,
-        totalConsumption,
-        color: getColor(sup),
-      });
-
-      currentBlock = [effective[k]];
-    }
-  }
-
-  if (currentBlock.length) {
-    const start = currentBlock[0];
-    const end = currentBlock[currentBlock.length - 1];
+  const flushBlock = (block: EffectiveReadingEntry[]) => {
+    if (!block.length) return;
+    const start = block[0];
+    const end = block[block.length - 1];
     const sup = start.effectiveSupplier;
-    const totalConsumption = Math.max(0, end.value - start.value);
     periods.push({
       supplier: sup,
       startDate: start.date,
       endDate: end.date,
       startValue: start.value,
       endValue: end.value,
-      totalConsumption,
+      totalConsumption: Math.max(0, end.value - start.value),
       color: getColor(sup),
     });
+  };
+
+  for (let k = 1; k < effective.length; k++) {
+    if (effective[k].effectiveSupplier === effective[k - 1].effectiveSupplier) {
+      currentBlock.push(effective[k]);
+    } else {
+      flushBlock(currentBlock);
+      currentBlock = [effective[k]];
+    }
   }
+
+  flushBlock(currentBlock);
 
   return periods;
 }
