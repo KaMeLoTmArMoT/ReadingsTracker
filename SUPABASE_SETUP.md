@@ -71,6 +71,7 @@ Migrations run automatically via GitHub Actions (`.github/workflows/supabase-mig
 |---|---|---|
 | **OAuth 2.0 Barrier** | Registration requires a valid Google account (prevents spam bots) | Google Cloud / Supabase Auth |
 | **Row Level Security (RLS)** | `auth.uid() = user_id` limits user operations strictly to their own rows | `supabase/migrations/` |
+| **Explicit API Grants** | `GRANT` statements keep Data API access working after Supabase stopped auto-granting new `public` tables (2026-10-30) | `supabase/migrations/20261026000000_explicit_grants.sql` |
 | **Payload Size Constraint** | `pg_column_size(payload) <= 524288` (Max 500 KB per entry) | Postgres Check Constraint |
 | **Account Quota Limit** | `check_user_readings_limit` trigger caps records at 20 per account | Postgres Function Trigger |
 | **Rate Limiting** | Built-in IP rate limits (30 sign-ins / 5 min) | Supabase API Gateway |
