@@ -64,3 +64,23 @@ export interface Point2D {
   x: string;
   y: number;
 }
+
+export type ShareRole = "view" | "edit";
+
+export interface SharedUser {
+  email: string;
+  role: ShareRole;
+}
+
+export interface TrackerPage {
+  id: string; // db id (UUID) or local page id
+  dataKey: string;
+  title: string;
+  datasets: CategoryDataset[];
+  isOwner: boolean;
+  role: "owner" | ShareRole;
+  ownerEmail?: string;
+  shareToken: string | null;
+  sharedUsers: SharedUser[];
+  updatedAt?: string;
+}

@@ -5,12 +5,21 @@ import {
 } from "./calculations";
 import { drawChart, exportLineChart, highlightSupplierPeriod } from "./charts";
 import {
+  buildCategoryReportData,
+  formatReportPlainText,
+  getStyledChartBlob,
+  shareOrCopyReport,
+} from "./report";
+import { renderPageNavigation } from "./sharing";
+import {
   addCategory,
   addEntry,
+  canEditActivePage,
   currentUser,
-  datasets,
   deleteCategory,
   deleteEntry,
+  getActiveDatasets,
+  getActivePage,
   handleGoogleSignIn,
   handleSignOut,
   importCSVEntries,
@@ -22,7 +31,7 @@ import {
   toggleCollapse,
   updateEntry,
 } from "./state";
-import type { ReadingEntry } from "./types";
+import type { CategoryDataset, ReadingEntry } from "./types";
 
 export function renderAuthUI(notice?: string): void {
   const badge = document.getElementById("authBadge");
@@ -102,7 +111,7 @@ export function renderAuthUI(notice?: string): void {
 }
 
 export function exportCSV(i: number): void {
-  const ds = datasets[i];
+  const ds = getActiveDatasets()[i];
   if (!ds) return;
 
   const rows = [
@@ -185,7 +194,7 @@ export function importCSV(event: Event, i: number): void {
 }
 
 export function renderStatsChips(i: number): string {
-  const ds = datasets[i];
+  const ds = getActiveDatasets()[i];
   if (!ds || !ds.entries.length) return "";
 
   const sorted = [...ds.entries]
@@ -262,14 +271,127 @@ export function renderStatsChips(i: number): string {
   return chipsHTML;
 }
 
+export function openReportModal(categoryIndex: number): void {
+  const activePage = getActivePage();
+  const ds = getActiveDatasets()[categoryIndex];
+  if (!ds || !activePage) return;
+
+  const reportData = buildCategoryReportData(activePage.title, ds);
+  if (!reportData) {
+    alert("Недостатньо даних для формування звіту.");
+    return;
+  }
+
+  let reportOverlay = document.getElementById("reportModalOverlay");
+  if (!reportOverlay) {
+    reportOverlay = document.createElement("div");
+    reportOverlay.id = "reportModalOverlay";
+    reportOverlay.className = "tracker-modal-overlay";
+    document.body.appendChild(reportOverlay);
+  }
+
+  const initialText = formatReportPlainText(reportData);
+
+  reportOverlay.innerHTML = `
+    <div class="tracker-modal-content report-modal-content">
+      <div class="tracker-modal-header">
+        <h3>📤 Звіт для Telegram: ${ds.name}</h3>
+        <button class="modal-close-btn" id="closeReportModalBtn">&times;</button>
+      </div>
+      <div class="tracker-modal-body">
+        <p class="section-desc">Текст звіту та графік підготовлено для надсилання в Telegram:</p>
+        <textarea id="reportTextEditor" class="report-textarea" rows="6">${initialText}</textarea>
+        <div id="reportActionStatus" class="report-status-msg"></div>
+      </div>
+      <div class="tracker-modal-footer report-modal-footer">
+        <button class="btn-modal-action btn-share-native" id="btnShareNative">
+          📱 Надіслати (Share)
+        </button>
+        <button class="btn-modal-action" id="btnCopyGraphAndText">
+          🖼️ Графік + Текст (Ctrl+V)
+        </button>
+        <button class="btn-modal-secondary" id="btnCopyTextOnly">
+          📋 Тільки текст
+        </button>
+      </div>
+    </div>
+  `;
+
+  reportOverlay.style.display = "flex";
+
+  const closeBtn = reportOverlay.querySelector("#closeReportModalBtn");
+  closeBtn?.addEventListener("click", () => {
+    reportOverlay.style.display = "none";
+  });
+
+  const statusEl = reportOverlay.querySelector(
+    "#reportActionStatus",
+  ) as HTMLElement | null;
+  const textarea = reportOverlay.querySelector(
+    "#reportTextEditor",
+  ) as HTMLTextAreaElement | null;
+
+  const showStatus = (msg: string, isError = false) => {
+    if (statusEl) {
+      statusEl.textContent = msg;
+      statusEl.className = `report-status-msg ${isError ? "error" : "success"}`;
+      statusEl.style.display = "block";
+    }
+  };
+
+  // 1. Native share button
+  reportOverlay
+    .querySelector("#btnShareNative")
+    ?.addEventListener("click", async () => {
+      if (!ds.chart) return;
+      const blob = await getStyledChartBlob(ds.chart);
+      const text = textarea?.value || initialText;
+      const res = await shareOrCopyReport(
+        blob,
+        text,
+        `${activePage.title} — ${ds.name}`,
+      );
+      showStatus(res.message, !res.success);
+    });
+
+  // 2. Graph + Text copy
+  reportOverlay
+    .querySelector("#btnCopyGraphAndText")
+    ?.addEventListener("click", async () => {
+      if (!ds.chart) return;
+      const blob = await getStyledChartBlob(ds.chart);
+      const text = textarea?.value || initialText;
+      const res = await shareOrCopyReport(
+        blob,
+        text,
+        `${activePage.title} — ${ds.name}`,
+      );
+      showStatus(res.message, !res.success);
+    });
+
+  // 3. Text only
+  reportOverlay
+    .querySelector("#btnCopyTextOnly")
+    ?.addEventListener("click", async () => {
+      const text = textarea?.value || initialText;
+      try {
+        await navigator.clipboard.writeText(text);
+        showStatus("Текст звіту успішно скопійовано!");
+      } catch {
+        showStatus("Помилка копіювання до буфера.", true);
+      }
+    });
+}
+
 export function createCategoryCard(
   i: number,
-  ds: (typeof datasets)[0],
+  ds: CategoryDataset,
 ): HTMLElement {
   const card = document.createElement("div");
   card.className = "dataset-card";
   card.id = `dataset-card-${i}`;
 
+  const editable = canEditActivePage();
   const hasData = ds.entries.length > 0;
   const statsChips = renderStatsChips(i);
   const effectiveEntries = getEffectiveEntries(ds.entries);
@@ -361,21 +483,27 @@ export function createCategoryCard(
       <tr class="${isAnomaly ? "tr-anomaly" : ""}">
         <td class="row-index">${j + 1}</td>
         <td>
-          <input type="date" class="input-table-date" value="${e.date || ""}" data-i="${i}" data-j="${j}" data-field="date" />
+          <input type="date" class="input-table-date" value="${e.date || ""}" data-i="${i}" data-j="${j}" data-field="date" ${!editable ? "disabled" : ""} />
         </td>
         <td>
           <div style="display:flex; align-items:center; gap:6px;">
-            <input type="number" step="any" class="input-table-number ${isAnomaly ? "input-anomaly" : ""}" value="${Number.isNaN(e.value) ? "" : e.value}" data-i="${i}" data-j="${j}" data-field="value" placeholder="0" />
+            <input type="number" step="any" class="input-table-number ${isAnomaly ? "input-anomaly" : ""}" value="${Number.isNaN(e.value) ? "" : e.value}" data-i="${i}" data-j="${j}" data-field="value" placeholder="0" ${!editable ? "disabled" : ""} />
             ${isAnomaly ? `<span class="anomaly-badge" title="Показ менший за попередній на ${anomalyDiff} (було ${prevReadingRef}). Можлива помилка введення.">⚠️ -${anomalyDiff}</span>` : ""}
           </div>
         </td>
         <td>
-          <input type="text" class="input-table-text input-supplier-field" value="${e.supplier || ""}" placeholder="(${eff?.effectiveSupplier || "Inherited"})" data-i="${i}" data-j="${j}" data-field="supplier" title="Supplier name (leave blank to inherit from previous row)" />
+          <input type="text" class="input-table-text input-supplier-field" value="${e.supplier || ""}" placeholder="(${eff?.effectiveSupplier || "Inherited"})" data-i="${i}" data-j="${j}" data-field="supplier" title="Supplier name (leave blank to inherit from previous row)" ${!editable ? "disabled" : ""} />
         </td>
         <td class="controls-cell">
-          <button class="btn-row-action btn-move-up" data-i="${i}" data-j="${j}" title="Move Up">↑</button>
-          <button class="btn-row-action btn-move-down" data-i="${i}" data-j="${j}" title="Move Down">↓</button>
-          <button class="btn-row-action btn-delete" data-i="${i}" data-j="${j}" title="Delete Row">🗑️</button>
+          ${
+            editable
+              ? `
+            <button class="btn-row-action btn-move-up" data-i="${i}" data-j="${j}" title="Move Up">↑</button>
+            <button class="btn-row-action btn-move-down" data-i="${i}" data-j="${j}" title="Move Down">↓</button>
+            <button class="btn-row-action btn-delete" data-i="${i}" data-j="${j}" title="Delete Row">🗑️</button>
+          `
+              : `<span class="read-only-tag">—</span>`
+          }
         </td>
       </tr>
     `;
@@ -395,16 +523,28 @@ export function createCategoryCard(
               </button>`
             : ""
         }
-        <label class="btn-action btn-import">
-          📤 Import CSV
-          <input type="file" accept=".csv" class="input-csv-file-hdr" data-i="${i}" style="display:none" />
-        </label>
+        ${
+          editable
+            ? `
+          <label class="btn-action btn-import">
+            📤 Import CSV
+            <input type="file" accept=".csv" class="input-csv-file-hdr" data-i="${i}" style="display:none" />
+          </label>
+        `
+            : ""
+        }
         <button class="btn-action btn-toggle" id="toggle-card-${i}">
-          ${ds.collapsed ? "📋 Edit Table" : "📊 Hide Table"}
+          ${ds.collapsed ? (editable ? "📋 Edit Table" : "📋 View Table") : "📊 Hide Table"}
         </button>
-        <button class="btn-action btn-delete-cat" id="delete-cat-${i}" title="Delete Category">
-          🗑️
-        </button>
+        ${
+          editable
+            ? `
+          <button class="btn-action btn-delete-cat" id="delete-cat-${i}" title="Delete Category">
+            🗑️
+          </button>
+        `
+            : ""
+        }
       </div>
     </div>
 
@@ -428,19 +568,31 @@ export function createCategoryCard(
         </table>
       </div>
 
-      <div class="table-actions-row">
-        <button class="btn-add-row" id="add-row-${i}" title="Add new meter reading">+ Add Reading Entry</button>
-        <button class="btn-action btn-sort" id="sort-date-${i}" title="Sort readings chronologically by date">📅 Sort by Date</button>
-      </div>
+      ${
+        editable
+          ? `
+        <div class="table-actions-row">
+          <button class="btn-add-row" id="add-row-${i}" title="Add new meter reading">+ Add Reading Entry</button>
+          <button class="btn-action btn-sort" id="sort-date-${i}" title="Sort readings chronologically by date">📅 Sort by Date</button>
+        </div>
+      `
+          : ""
+      }
 
       <div class="action-buttons-bar">
         <button class="btn-action btn-export" id="export-csv-${i}">
           📥 Export CSV
         </button>
-        <label class="btn-action btn-import">
-          📤 Import CSV
-          <input type="file" accept=".csv" class="input-csv-file" data-i="${i}" style="display:none" />
-        </label>
+        ${
+          editable
+            ? `
+          <label class="btn-action btn-import">
+            📤 Import CSV
+            <input type="file" accept=".csv" class="input-csv-file" data-i="${i}" style="display:none" />
+          </label>
+        `
+            : ""
+        }
         <button class="btn-action btn-close-table" id="close-table-${i}">
           🔼 Collapse Table
         </button>
@@ -452,9 +604,14 @@ export function createCategoryCard(
         hasData
           ? `<div class="chart-header-bar">
               <span class="chart-section-title">Relative Consumption Trend</span>
-              <button class="btn-export-chart-small" id="export-line-${i}" title="Save Line Chart as PNG image">
-                📷 Save PNG
-              </button>
+              <div class="chart-header-actions">
+                <button class="btn-export-chart-small btn-share-report-action" id="share-report-${i}" title="Звіт для Telegram (графік + текст)">
+                  📤 Звіт / Share
+                </button>
+                <button class="btn-export-chart-small" id="export-line-${i}" title="Save Line Chart as PNG image">
+                  📷 Save PNG
+                </button>
+              </div>
             </div>`
           : ""
       }
@@ -464,52 +621,79 @@ export function createCategoryCard(
     </div>
   `;
 
-  const toggleBtn = card.querySelector(`#toggle-card-${i}`);
-  if (toggleBtn) toggleBtn.addEventListener("click", () => toggleCollapse(i));
+  // Bind Buttons
+  card
+    .querySelector(`#toggle-card-${i}`)
+    ?.addEventListener("click", () => toggleCollapse(i));
+  card
+    .querySelector(`#close-table-${i}`)
+    ?.addEventListener("click", () => toggleCollapse(i));
+  card
+    .querySelector(`#delete-cat-${i}`)
+    ?.addEventListener("click", () => deleteCategory(i));
+  card
+    .querySelector(`#export-line-${i}`)
+    ?.addEventListener("click", () => exportLineChart(i));
+  card
+    .querySelector(`#share-report-${i}`)
+    ?.addEventListener("click", () => openReportModal(i));
 
-  const closeTableBtn = card.querySelector(`#close-table-${i}`);
-  if (closeTableBtn)
-    closeTableBtn.addEventListener("click", () => toggleCollapse(i));
+  card
+    .querySelector(`#add-row-${i}`)
+    ?.addEventListener("click", () => addEntry(i));
+  card
+    .querySelector(`#sort-date-${i}`)
+    ?.addEventListener("click", () => sortCategoryEntries(i));
+  card
+    .querySelector(`#export-csv-${i}`)
+    ?.addEventListener("click", () => exportCSV(i));
+  card
+    .querySelector(`#export-csv-hdr-${i}`)
+    ?.addEventListener("click", () => exportCSV(i));
 
-  const deleteCatBtn = card.querySelector(`#delete-cat-${i}`);
-  if (deleteCatBtn)
-    deleteCatBtn.addEventListener("click", () => deleteCategory(i));
+  if (editable) {
+    const importCsvInputs = card.querySelectorAll<HTMLInputElement>(
+      `.input-csv-file[data-i="${i}"], .input-csv-file-hdr[data-i="${i}"]`,
+    );
+    for (const inputEl of importCsvInputs) {
+      inputEl.addEventListener("change", (e) => importCSV(e, i));
+    }
 
-  const exportLineBtn = card.querySelector(`#export-line-${i}`);
-  if (exportLineBtn)
-    exportLineBtn.addEventListener("click", () => exportLineChart(i));
+    const inputElements =
+      card.querySelectorAll<HTMLInputElement>("input[data-field]");
+    for (const inputEl of inputElements) {
+      inputEl.addEventListener("change", (e) => {
+        const target = e.target as HTMLInputElement;
+        const indexI = Number(target.dataset.i);
+        const indexJ = Number(target.dataset.j);
+        const field = target.dataset.field as "date" | "value" | "supplier";
+        updateEntry(indexI, indexJ, field, target.value);
+      });
+    }
 
-  const addRowBtn = card.querySelector(`#add-row-${i}`);
-  if (addRowBtn) addRowBtn.addEventListener("click", () => addEntry(i));
+    const bindRowAction = (
+      selector: string,
+      action: (i: number, j: number) => void,
+    ) => {
+      for (const btnEl of card.querySelectorAll<HTMLButtonElement>(selector)) {
+        btnEl.addEventListener("click", (e) => {
+          const target = (e.target as HTMLElement).closest("button");
+          if (target) {
+            action(Number(target.dataset.i), Number(target.dataset.j));
+          }
+        });
+      }
+    };
 
-  const sortDateBtn = card.querySelector(`#sort-date-${i}`);
-  if (sortDateBtn)
-    sortDateBtn.addEventListener("click", () => sortCategoryEntries(i));
-
-  const exportCsvBtn = card.querySelector(`#export-csv-${i}`);
-  if (exportCsvBtn) exportCsvBtn.addEventListener("click", () => exportCSV(i));
-
-  const exportCsvHdrBtn = card.querySelector(`#export-csv-hdr-${i}`);
-  if (exportCsvHdrBtn)
-    exportCsvHdrBtn.addEventListener("click", () => exportCSV(i));
-
-  const importCsvInputs = card.querySelectorAll<HTMLInputElement>(
-    `.input-csv-file[data-i="${i}"], .input-csv-file-hdr[data-i="${i}"]`,
-  );
-  for (const inputEl of importCsvInputs) {
-    inputEl.addEventListener("change", (e) => importCSV(e, i));
-  }
-
-  const inputElements =
-    card.querySelectorAll<HTMLInputElement>("input[data-field]");
-  for (const inputEl of inputElements) {
-    inputEl.addEventListener("change", (e) => {
-      const target = e.target as HTMLInputElement;
-      const indexI = Number(target.dataset.i);
-      const indexJ = Number(target.dataset.j);
-      const field = target.dataset.field as "date" | "value" | "supplier";
-      updateEntry(indexI, indexJ, field, target.value);
-    });
+    bindRowAction(".btn-move-up", (indexI, indexJ) =>
+      moveEntry(indexI, indexJ, -1),
+    );
+    bindRowAction(".btn-move-down", (indexI, indexJ) =>
+      moveEntry(indexI, indexJ, 1),
+    );
+    bindRowAction(".btn-delete", (indexI, indexJ) =>
+      deleteEntry(indexI, indexJ),
+    );
   }
 
   const supplierPillEls = card.querySelectorAll<HTMLElement>(".supplier-pill");
@@ -525,24 +709,6 @@ export function createCategoryCard(
     });
   }
 
-  const bindRowAction = (
-    selector: string,
-    action: (i: number, j: number) => void,
-  ) => {
-    for (const btnEl of card.querySelectorAll<HTMLButtonElement>(selector)) {
-      btnEl.addEventListener("click", (e) => {
-        const target = (e.target as HTMLElement).closest("button");
-        if (target) {
-          action(Number(target.dataset.i), Number(target.dataset.j));
-        }
-      });
-    }
-  };
-
-  bindRowAction(".btn-move-up", (i, j) => moveEntry(i, j, -1));
-  bindRowAction(".btn-move-down", (i, j) => moveEntry(i, j, 1));
-  bindRowAction(".btn-delete", (i, j) => deleteEntry(i, j));
-
   return card;
 }
 
@@ -550,17 +716,32 @@ export function renderDatasets(
   shouldPersist = true,
   targetCategoryIndex?: number,
 ): void {
+  renderPageNavigation();
+
   const host = document.getElementById("datasets");
   if (!host) return;
 
-  if (targetCategoryIndex !== undefined && datasets[targetCategoryIndex]) {
+  const currentDatasets = getActiveDatasets();
+  const editable = canEditActivePage();
+
+  const categoryBar = document.querySelector(
+    ".new-category-bar",
+  ) as HTMLElement | null;
+  if (categoryBar) {
+    categoryBar.style.display = editable ? "flex" : "none";
+  }
+
+  if (
+    targetCategoryIndex !== undefined &&
+    currentDatasets[targetCategoryIndex]
+  ) {
     const existingCard = document.getElementById(
       `dataset-card-${targetCategoryIndex}`,
     );
     if (existingCard) {
       const newCard = createCategoryCard(
         targetCategoryIndex,
-        datasets[targetCategoryIndex],
+        currentDatasets[targetCategoryIndex],
       );
       existingCard.replaceWith(newCard);
       drawChart(targetCategoryIndex);
@@ -575,7 +756,7 @@ export function renderDatasets(
   const currentScrollY = window.scrollY;
   host.innerHTML = "";
 
-  for (const [i, ds] of datasets.entries()) {
+  for (const [i, ds] of currentDatasets.entries()) {
     const card = createCategoryCard(i, ds);
     host.appendChild(card);
     drawChart(i);

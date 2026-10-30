@@ -31,6 +31,9 @@ ReadingsTracker is built for anyone who wants a clean, ultra-fast visual tracker
 - 📊 **Multi-Year Overlay Analytics:** Normalize readings across different years to compare consumption patterns side-by-side.
 - 📈 **Forecast Predictions & Same-Level Connector:** End-of-month forecast interpolation for active year and cross-year level comparisons.
 - 📅 **Monthly Totals & Delta Arrows:** Automatic monthly sum calculation with percentage delta badges (`↑ +12%`, `↓ -5%`).
+- 📑 **Multi-Page & Space Management:** Create multiple pages/spaces (e.g. "Apartment", "Summer House", "Parents") with independent charts and privacy controls.
+- 👥 **Safe Sharing & Granular Permissions:** Share pages via Google Email (`view` or `edit` roles) or generate a private secret link (`?share=<uuid>`) for read-only access.
+- 📱 **Telegram & Native Sharing:** 1-click formatted reports with chart snapshots and consumption stats ready for Telegram, WhatsApp, or clipboard copy.
 - 🔒 **Guest & Cloud Dual Mode:**
   - **Guest Mode:** 100% private, works completely offline using `localStorage`.
   - **Cloud Mode:** 1-click Google OAuth login with instant cloud synchronization via Supabase.

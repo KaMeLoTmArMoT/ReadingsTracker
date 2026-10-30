@@ -37,7 +37,7 @@ import {
   mmddFromRefDate,
   toUTCDate,
 } from "./calculations";
-import { datasets } from "./state";
+import { getActiveDatasets } from "./state";
 import type {
   ActiveForecast,
   ChartInstance,
@@ -181,7 +181,7 @@ export function highlightSupplierPeriod(
   supplierName: string | null,
 ): void {
   activeHighlightedSupplier[categoryIndex] = supplierName;
-  const ds = datasets[categoryIndex];
+  const ds = getActiveDatasets()[categoryIndex];
   if (!ds) return;
 
   if (ds.chart) {
@@ -462,7 +462,7 @@ export function downloadChartImage(
 }
 
 export function exportLineChart(i: number): void {
-  const ds = datasets[i];
+  const ds = getActiveDatasets()[i];
   if (!ds || !ds.chart) return;
   downloadChartImage(ds.chart, `${ds.name}-line.png`);
 }
@@ -476,12 +476,15 @@ export function drawChart(i: number): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  if (datasets[i].chart) {
-    datasets[i].chart?.destroy();
-    datasets[i].chart = null;
+  const currentDatasets = getActiveDatasets();
+  if (!currentDatasets[i]) return;
+
+  if (currentDatasets[i].chart) {
+    currentDatasets[i].chart?.destroy();
+    currentDatasets[i].chart = null;
   }
 
-  const sorted: ReadingEntry[] = [...datasets[i].entries]
+  const sorted: ReadingEntry[] = [...currentDatasets[i].entries]
     .filter((e) => e.date)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -498,7 +501,7 @@ export function drawChart(i: number): void {
   const yearPointsMap: Record<string, Point2D[]> = {};
   const REFERENCE_YEAR = 2000;
 
-  datasets[i]._comparisons = null;
+  currentDatasets[i]._comparisons = null;
 
   for (const [yearIndex, year] of years.entries()) {
     let baseline = 0;
@@ -642,14 +645,14 @@ export function drawChart(i: number): void {
     }
 
     if (comparisons.length) {
-      datasets[i]._comparisons = {
+      currentDatasets[i]._comparisons = {
         currentDate: last.date,
         items: comparisons,
       };
     }
   }
 
-  datasets[i].chart = new Chart(ctx, {
+  currentDatasets[i].chart = new Chart(ctx, {
     type: "line",
     data: { datasets: chartDatasets },
     options: {
@@ -689,7 +692,7 @@ export function drawChart(i: number): void {
       },
       plugins: {
         supplierLineTransitions: {
-          periods: getSupplierSummaries(datasets[i].entries),
+          periods: getSupplierSummaries(currentDatasets[i].entries),
           highlightedSupplier: activeHighlightedSupplier[i],
         },
         legend: {
@@ -752,7 +755,10 @@ export function drawBarChart(
   if (!barContainer) return;
 
   barContainer.innerHTML = "";
-  datasets[i].barCharts = {};
+  const currentDatasets = getActiveDatasets();
+  if (!currentDatasets[i]) return;
+
+  currentDatasets[i].barCharts = {};
   if (!sorted.length) return;
 
   const monthTotals: Record<string, number> = {};
@@ -813,8 +819,8 @@ export function drawBarChart(
     exportBtn.innerHTML = "📷 Save PNG";
     exportBtn.title = `Save ${year} chart as PNG image`;
     exportBtn.onclick = () => {
-      const chart = datasets[i].barCharts?.[year];
-      downloadChartImage(chart, `${datasets[i].name}-${year}-bars.png`);
+      const chart = currentDatasets[i].barCharts?.[year];
+      downloadChartImage(chart, `${currentDatasets[i].name}-${year}-bars.png`);
     };
 
     yearHeader.appendChild(yearInfo);
@@ -903,7 +909,7 @@ export function drawBarChart(
             monthTotals,
           },
           supplierBarTransitions: {
-            periods: getSupplierSummaries(datasets[i].entries),
+            periods: getSupplierSummaries(currentDatasets[i].entries),
             year,
             highlightedSupplier: activeHighlightedSupplier[i],
           },
@@ -932,8 +938,8 @@ export function drawBarChart(
     });
 
     const currentBarMap: Record<string, ChartInstance> =
-      datasets[i].barCharts || {};
+      currentDatasets[i].barCharts || {};
     currentBarMap[year] = barChart;
-    datasets[i].barCharts = currentBarMap;
+    currentDatasets[i].barCharts = currentBarMap;
   }
 }
