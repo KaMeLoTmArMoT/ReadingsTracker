@@ -5,6 +5,22 @@ import {
 } from "@supabase/supabase-js";
 import type { CategoryDataset, ReadingEntry, TrackerPage } from "./types";
 
+export const MAX_PAGES_PER_USER = 5;
+export const MAX_CATEGORIES_PER_PAGE = 5;
+export const MAX_ENTRIES_PER_CATEGORY = 500;
+export const MAX_SHARED_USERS_PER_PAGE = 20;
+export const MAX_TITLE_LENGTH = 60;
+
+export function escapeHtml(str: unknown): string {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 const DEFAULT_SUPABASE_URL = "https://gxbpsbqpuaudtlfliezs.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY =
   "sb_publishable_HgFswhUnZWkHwtVyXTxt2g_h371PL5z";
@@ -160,13 +176,23 @@ function normalizeDatasets(raw: unknown): CategoryDataset[] {
   if (!Array.isArray(raw)) return [];
   return (
     raw as { name: string; entries?: ReadingEntry[]; collapsed?: boolean }[]
-  ).map((d) => ({
-    name: d.name,
-    entries: d.entries || [],
-    chart: null,
-    barCharts: {},
-    collapsed: !!d.collapsed,
-  }));
+  )
+    .slice(0, MAX_CATEGORIES_PER_PAGE)
+    .map((d) => ({
+      name: String(d.name || "Категорія").slice(0, MAX_TITLE_LENGTH),
+      entries: Array.isArray(d.entries)
+        ? d.entries.slice(-MAX_ENTRIES_PER_CATEGORY).map((e) => ({
+            date: String(e.date || "").slice(0, 10),
+            value: Number(e.value) || 0,
+            supplier: e.supplier
+              ? String(e.supplier).slice(0, MAX_TITLE_LENGTH)
+              : undefined,
+          }))
+        : [],
+      chart: null,
+      barCharts: {},
+      collapsed: !!d.collapsed,
+    }));
 }
 
 export function persistState(): void {
@@ -331,23 +357,32 @@ export async function loadFromSupabase(): Promise<void> {
     syncState = "syncing";
     authUpdateCallback?.();
 
-    const { data, error } = await supabaseClient
-      .from("user_readings")
-      .select(
-        "id, user_id, data_key, title, payload, share_token, shared_users, updated_at",
-      )
-      .order("updated_at", { ascending: false });
+    // Use RPC function if available to securely fetch pages and mask unneeded shared metadata
+    const rpcRes = await supabaseClient.rpc("get_user_pages");
+    let rows: DBUserReadingRow[] = [];
 
-    if (error) {
-      console.error("Error loading cloud data:", error.message);
-      syncState = "error";
-      authUpdateCallback?.();
-      return;
+    if (!rpcRes.error && Array.isArray(rpcRes.data)) {
+      rows = rpcRes.data as DBUserReadingRow[];
+    } else {
+      // Fallback to table query if migration not yet applied
+      const { data, error } = await supabaseClient
+        .from("user_readings")
+        .select(
+          "id, user_id, data_key, title, payload, share_token, shared_users, updated_at",
+        )
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        console.error("Error loading cloud data:", error.message);
+        syncState = "error";
+        authUpdateCallback?.();
+        return;
+      }
+      rows = (data || []) as DBUserReadingRow[];
     }
 
     clearCharts();
 
-    const rows = (data || []) as DBUserReadingRow[];
     const userEmailLower = (currentUser.email || "").toLowerCase();
 
     if (rows.length > 0) {
@@ -499,7 +534,15 @@ export function loadFromLocalStorage(): void {
 
 // Multi-page CRUD
 export async function createNewPage(title: string): Promise<void> {
-  const cleanTitle = title.trim();
+  const ownPages = pages.filter((p) => p.isOwner);
+  if (ownPages.length >= MAX_PAGES_PER_USER) {
+    alert(
+      `Досягнуто ліміт сторінок (${MAX_PAGES_PER_USER}). Видаліть зайву сторінку, щоб створити нову.`,
+    );
+    return;
+  }
+
+  const cleanTitle = title.trim().slice(0, MAX_TITLE_LENGTH);
   if (!cleanTitle) return;
 
   const newId = crypto.randomUUID();
@@ -541,7 +584,7 @@ export async function renameActivePage(newTitle: string): Promise<void> {
   const page = getActivePage();
   if (!page || !page.isOwner) return;
 
-  const clean = newTitle.trim();
+  const clean = newTitle.trim().slice(0, MAX_TITLE_LENGTH);
   if (!clean || clean === page.title) return;
 
   page.title = clean;
@@ -591,14 +634,14 @@ export async function updatePageSharing(
   if (!page || !page.isOwner) return;
 
   page.shareToken = shareToken;
-  page.sharedUsers = sharedUsers;
+  page.sharedUsers = sharedUsers.slice(0, MAX_SHARED_USERS_PER_PAGE);
 
   if (currentUser && supabaseClient) {
     await supabaseClient
       .from("user_readings")
       .update({
         share_token: shareToken,
-        shared_users: sharedUsers,
+        shared_users: page.sharedUsers,
       })
       .eq("id", page.id);
   } else {
@@ -609,13 +652,20 @@ export async function updatePageSharing(
 // Data manipulation CRUD for active page
 export function addCategory(name: string, entries: ReadingEntry[] = []): void {
   if (!canEditActivePage()) return;
-  const cleanName = name.trim();
+  const cleanName = name.trim().slice(0, MAX_TITLE_LENGTH);
   if (!cleanName) return;
 
   const activeDs = getActiveDatasets();
+  if (activeDs.length >= MAX_CATEGORIES_PER_PAGE) {
+    alert(
+      `Досягнуто ліміт категорій (${MAX_CATEGORIES_PER_PAGE} на сторінку). Створіть нову сторінку або видаліть зайвий графік.`,
+    );
+    return;
+  }
+
   activeDs.push({
     name: cleanName,
-    entries,
+    entries: entries.slice(-MAX_ENTRIES_PER_CATEGORY),
     chart: null,
     barCharts: {},
     collapsed: true,
@@ -664,6 +714,12 @@ export function addEntry(i: number): void {
   if (!canEditActivePage()) return;
   const activeDs = getActiveDatasets();
   if (!activeDs[i]) return;
+  if (activeDs[i].entries.length >= MAX_ENTRIES_PER_CATEGORY) {
+    alert(
+      `Досягнуто ліміт показів (${MAX_ENTRIES_PER_CATEGORY} записів на один графік).`,
+    );
+    return;
+  }
   const today = new Date().toISOString().slice(0, 10);
   activeDs[i].entries.push({ date: today, value: 0 });
   renderCallback?.(true, i);
@@ -681,7 +737,7 @@ export function updateEntry(
   if (field === "value") {
     activeDs[i].entries[j].value = Number(value);
   } else if (field === "supplier") {
-    const trimmed = value.trim();
+    const trimmed = value.trim().slice(0, MAX_TITLE_LENGTH);
     if (trimmed) {
       activeDs[i].entries[j].supplier = trimmed;
     } else {
@@ -716,7 +772,16 @@ export function importCSVEntries(i: number, entries: ReadingEntry[]): void {
   if (!canEditActivePage()) return;
   const activeDs = getActiveDatasets();
   if (!activeDs[i]) return;
-  activeDs[i].entries = entries;
+
+  let finalEntries = entries;
+  if (entries.length > MAX_ENTRIES_PER_CATEGORY) {
+    alert(
+      `CSV містить ${entries.length} рядків. Залишено останні ${MAX_ENTRIES_PER_CATEGORY} найновіших показів відповідно до встановленого ліміту.`,
+    );
+    finalEntries = entries.slice(-MAX_ENTRIES_PER_CATEGORY);
+  }
+
+  activeDs[i].entries = finalEntries;
   activeDs[i].collapsed = true;
   renderCallback?.(true, i);
 }

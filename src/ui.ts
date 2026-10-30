@@ -12,12 +12,15 @@ import {
 } from "./report";
 import { renderPageNavigation } from "./sharing";
 import {
+  MAX_CATEGORIES_PER_PAGE,
+  MAX_ENTRIES_PER_CATEGORY,
   addCategory,
   addEntry,
   canEditActivePage,
   currentUser,
   deleteCategory,
   deleteEntry,
+  escapeHtml,
   getActiveDatasets,
   getActivePage,
   handleGoogleSignIn,
@@ -409,9 +412,9 @@ export function createCategoryCard(
         ${supplierSummaries
           .map(
             (s) => `
-          <div class="supplier-pill" data-i="${i}" data-supplier="${s.supplier}" style="--pill-color: ${s.color};">
-            <span class="supplier-pill-dot" style="background-color: ${s.color};"></span>
-            <span class="supplier-pill-name">${s.supplier}</span>
+          <div class="supplier-pill" data-i="${i}" data-supplier="${escapeHtml(s.supplier)}" style="--pill-color: ${escapeHtml(s.color)};">
+            <span class="supplier-pill-dot" style="background-color: ${escapeHtml(s.color)};"></span>
+            <span class="supplier-pill-name">${escapeHtml(s.supplier)}</span>
             <span class="supplier-pill-stats">(${Math.round(s.totalConsumption)} units)</span>
           </div>
         `,
@@ -462,7 +465,7 @@ export function createCategoryCard(
         <tr class="supplier-transition-row">
           <td colspan="5">
             <div class="supplier-transition-badge">
-              🏁 Initial Supplier: <strong>${eff.effectiveSupplier}</strong>
+              🏁 Initial Supplier: <strong>${escapeHtml(eff.effectiveSupplier)}</strong>
             </div>
           </td>
         </tr>
@@ -472,7 +475,7 @@ export function createCategoryCard(
         <tr class="supplier-transition-row">
           <td colspan="5">
             <div class="supplier-transition-badge">
-              🔄 Supplier Transition: <strong>${eff.effectiveSupplier}</strong>
+              🔄 Supplier Transition: <strong>${escapeHtml(eff.effectiveSupplier)}</strong>
             </div>
           </td>
         </tr>
@@ -483,16 +486,16 @@ export function createCategoryCard(
       <tr class="${isAnomaly ? "tr-anomaly" : ""}">
         <td class="row-index">${j + 1}</td>
         <td>
-          <input type="date" class="input-table-date" value="${e.date || ""}" data-i="${i}" data-j="${j}" data-field="date" ${!editable ? "disabled" : ""} />
+          <input type="date" class="input-table-date" value="${escapeHtml(e.date || "")}" data-i="${i}" data-j="${j}" data-field="date" ${!editable ? "disabled" : ""} />
         </td>
         <td>
           <div style="display:flex; align-items:center; gap:6px;">
             <input type="number" step="any" class="input-table-number ${isAnomaly ? "input-anomaly" : ""}" value="${Number.isNaN(e.value) ? "" : e.value}" data-i="${i}" data-j="${j}" data-field="value" placeholder="0" ${!editable ? "disabled" : ""} />
-            ${isAnomaly ? `<span class="anomaly-badge" title="Показ менший за попередній на ${anomalyDiff} (було ${prevReadingRef}). Можлива помилка введення.">⚠️ -${anomalyDiff}</span>` : ""}
+            ${isAnomaly ? `<span class="anomaly-badge" title="Показ менший за попередній на ${anomalyDiff} (було ${escapeHtml(prevReadingRef)}). Можлива помилка введення.">⚠️ -${anomalyDiff}</span>` : ""}
           </div>
         </td>
         <td>
-          <input type="text" class="input-table-text input-supplier-field" value="${e.supplier || ""}" placeholder="(${eff?.effectiveSupplier || "Inherited"})" data-i="${i}" data-j="${j}" data-field="supplier" title="Supplier name (leave blank to inherit from previous row)" ${!editable ? "disabled" : ""} />
+          <input type="text" class="input-table-text input-supplier-field" value="${escapeHtml(e.supplier || "")}" placeholder="(${escapeHtml(eff?.effectiveSupplier || "Inherited")})" data-i="${i}" data-j="${j}" data-field="supplier" title="Supplier name (leave blank to inherit from previous row)" ${!editable ? "disabled" : ""} />
         </td>
         <td class="controls-cell">
           ${
@@ -509,11 +512,13 @@ export function createCategoryCard(
     `;
   }
 
+  const isEntryLimitReached = ds.entries.length >= MAX_ENTRIES_PER_CATEGORY;
+
   card.innerHTML = `
     <div class="header-controls">
       <div class="category-header-title">
-        <h2>${ds.name}</h2>
-        <span class="entries-count-badge">${ds.entries.length} readings</span>
+        <h2>${escapeHtml(ds.name)}</h2>
+        <span class="entries-count-badge">${ds.entries.length}/${MAX_ENTRIES_PER_CATEGORY} readings</span>
       </div>
       <div class="header-action-group">
         ${
@@ -572,7 +577,7 @@ export function createCategoryCard(
         editable
           ? `
         <div class="table-actions-row">
-          <button class="btn-add-row" id="add-row-${i}" title="Add new meter reading">+ Add Reading Entry</button>
+          <button class="btn-add-row" id="add-row-${i}" ${isEntryLimitReached ? "disabled" : ""} title="${isEntryLimitReached ? `Досягнуто ліміт (${MAX_ENTRIES_PER_CATEGORY} записів)` : "Add new meter reading"}">+ Add Reading Entry ${isEntryLimitReached ? "(Ліміт)" : ""}</button>
           <button class="btn-action btn-sort" id="sort-date-${i}" title="Sort readings chronologically by date">📅 Sort by Date</button>
         </div>
       `
@@ -724,11 +729,33 @@ export function renderDatasets(
   const currentDatasets = getActiveDatasets();
   const editable = canEditActivePage();
 
+  const isCategoryLimitReached =
+    currentDatasets.length >= MAX_CATEGORIES_PER_PAGE;
+
   const categoryBar = document.querySelector(
     ".new-category-bar",
   ) as HTMLElement | null;
   if (categoryBar) {
     categoryBar.style.display = editable ? "flex" : "none";
+    const addCatBtn = document.getElementById(
+      "addCategoryBtn",
+    ) as HTMLButtonElement | null;
+    const catInput = document.getElementById(
+      "newCategory",
+    ) as HTMLInputElement | null;
+    if (addCatBtn && catInput) {
+      addCatBtn.disabled = isCategoryLimitReached;
+      catInput.disabled = isCategoryLimitReached;
+      addCatBtn.textContent = isCategoryLimitReached
+        ? `Limit (${MAX_CATEGORIES_PER_PAGE})`
+        : "+ Add Category";
+      if (isCategoryLimitReached) {
+        catInput.placeholder = `Ліміт досягнуто (${MAX_CATEGORIES_PER_PAGE} категорій)`;
+      } else {
+        catInput.placeholder =
+          "New category name (e.g. Electricity, Gas, Water)";
+      }
+    }
   }
 
   if (
