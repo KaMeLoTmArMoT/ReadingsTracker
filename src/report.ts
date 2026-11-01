@@ -1,4 +1,5 @@
 import { getActiveMonthForecast, groupEntriesByYear } from "./calculations";
+import { escapeHtml } from "./state";
 import type { CategoryDataset, ChartInstance } from "./types";
 
 export interface ReportData {
@@ -63,8 +64,8 @@ export function buildCategoryReportData(
 
 export function formatReportText(data: ReportData): string {
   const lines: string[] = [
-    `📊 <b>${data.pageTitle} — ${data.categoryName}</b>`,
-    `📅 <b>Дата:</b> ${data.latestDate}`,
+    `📊 <b>${escapeHtml(data.pageTitle)} — ${escapeHtml(data.categoryName)}</b>`,
+    `📅 <b>Дата:</b> ${escapeHtml(data.latestDate)}`,
     `🔢 <b>Останній показ:</b> ${data.latestValue}${data.delta !== undefined ? ` (Δ: ${data.delta >= 0 ? "+" : ""}${Math.round(data.delta * 10) / 10})` : ""}`,
   ];
 

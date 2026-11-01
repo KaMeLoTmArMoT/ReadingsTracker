@@ -298,12 +298,12 @@ export function openReportModal(categoryIndex: number): void {
   reportOverlay.innerHTML = `
     <div class="tracker-modal-content report-modal-content">
       <div class="tracker-modal-header">
-        <h3>📤 Звіт для Telegram: ${ds.name}</h3>
+        <h3>📤 Звіт для Telegram: ${escapeHtml(ds.name)}</h3>
         <button class="modal-close-btn" id="closeReportModalBtn">&times;</button>
       </div>
       <div class="tracker-modal-body">
         <p class="section-desc">Текст звіту та графік підготовлено для надсилання в Telegram:</p>
-        <textarea id="reportTextEditor" class="report-textarea" rows="6">${initialText}</textarea>
+        <textarea id="reportTextEditor" class="report-textarea" rows="6">${escapeHtml(initialText)}</textarea>
         <div id="reportActionStatus" class="report-status-msg"></div>
       </div>
       <div class="tracker-modal-footer report-modal-footer">

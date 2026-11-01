@@ -10,6 +10,9 @@ on:
       - '.github/workflows/supabase-migrations.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -23,5 +26,8 @@ jobs:
           version: latest
 
       - name: Push migrations to Supabase
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          supabase db push --db-url "${{ secrets.SUPABASE_DB_URL }}"
+          supabase db push --db-url "$SUPABASE_DB_URL"
+
